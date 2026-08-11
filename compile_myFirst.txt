@@ -1,0 +1,1 @@
+bin/kickc.sh -e my_examples/my_first.c

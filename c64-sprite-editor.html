@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="pl" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C64 Sprite Editor</title>
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+<style>
+:root,[data-theme="light"]{
+  --bg:#f7f6f2;--surf:#f9f8f5;--surf2:#fbfbf9;--surfoff:#f3f0ec;
+  --border:#d4d1ca;--div:#dcd9d5;--text:#28251d;--muted:#7a7974;--faint:#bab9b4;
+  --primary:#01696f;--primhov:#0c4e54;--primhl:#cedcd8;
+  --success:#437a22;--error:#a12c7b;
+  --sh-sm:0 1px 2px oklch(0.2 0.01 80/0.06);
+  --sh-md:0 4px 12px oklch(0.2 0.01 80/0.08);
+  --sh-lg:0 12px 32px oklch(0.2 0.01 80/0.12);
+  --r-sm:0.375rem;--r-md:0.5rem;--r-lg:0.75rem;--r-xl:1rem;
+  --tr:180ms cubic-bezier(0.16,1,0.3,1);
+  --font:'Satoshi',system-ui,sans-serif;
+}
+[data-theme="dark"]{
+  --bg:#171614;--surf:#1c1b19;--surf2:#201f1d;--surfoff:#1d1c1a;
+  --border:#393836;--div:#262523;--text:#cdccca;--muted:#797876;--faint:#5a5957;
+  --primary:#4f98a3;--primhov:#227f8b;--primhl:#313b3b;
+  --success:#6daa45;--error:#d163a7;
+  --sh-sm:0 1px 2px oklch(0 0 0/0.2);
+  --sh-md:0 4px 12px oklch(0 0 0/0.3);
+  --sh-lg:0 12px 32px oklch(0 0 0/0.4);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100dvh;font-size:1rem;line-height:1.5}
+button{cursor:pointer;border:none;background:none;font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:var(--r-sm)}
+
+.app{display:grid;grid-template-columns:260px 1fr;grid-template-rows:57px 1fr;min-height:100dvh}
+header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;
+  padding:0 1.5rem;background:var(--surf);border-bottom:1px solid var(--border);
+  box-shadow:var(--sh-sm);position:sticky;top:0;z-index:10}
+.logo{display:flex;align-items:center;gap:0.5rem;font-weight:700;font-size:1.05rem;color:var(--primary)}
+.badge{font-size:0.68rem;font-weight:700;padding:0.18em 0.5em;border-radius:99px;
+  background:var(--primhl);color:var(--primary);letter-spacing:0.06em;text-transform:uppercase}
+.hdr-r{display:flex;align-items:center;gap:0.75rem}
+.prev-wrap{display:flex;align-items:center;gap:0.5rem}
+.prev-lbl{font-size:0.68rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--faint)}
+canvas{image-rendering:pixelated;border:1px solid var(--border);border-radius:4px}
+
+aside{background:var(--surf);border-right:1px solid var(--border);padding:1rem;
+  display:flex;flex-direction:column;gap:0.9rem;overflow-y:auto;
+  max-height:calc(100dvh - 57px);position:sticky;top:57px}
+.lbl{font-size:0.68rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:0.3rem}
+.mode-g{display:flex;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.mbtn{flex:1;padding:0.38rem 0.3rem;font-size:0.78rem;font-weight:500;color:var(--muted);
+  transition:background var(--tr),color var(--tr);text-align:center}
+.mbtn.on{background:var(--primary);color:#fff}
+.crow{display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap}
+.sw{width:26px;height:26px;border-radius:var(--r-sm);border:2px solid transparent;
+  cursor:pointer;transition:border-color var(--tr),transform var(--tr);flex-shrink:0}
+.sw.on{border-color:var(--primary);transform:scale(1.15)}
+input[type=color]{width:32px;height:26px;border:1px solid var(--border);border-radius:var(--r-sm);
+  cursor:pointer;padding:1px;background:var(--surfoff)}
+.btn{display:inline-flex;align-items:center;gap:0.35rem;padding:0.4rem 0.8rem;
+  border-radius:var(--r-md);font-size:0.82rem;font-weight:500;white-space:nowrap;
+  transition:background var(--tr),color var(--tr)}
+.btn-p{background:var(--primary);color:#fff}.btn-p:hover{background:var(--primhov)}
+.btn-g{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.btn-g:hover{background:var(--surfoff);color:var(--text)}
+.btn-d{color:var(--error);border:1px solid oklch(from var(--error) l c h/0.3)}
+.btn-d:hover{background:oklch(from var(--error) l c h/0.08)}
+.btn-s{padding:0.28rem 0.6rem;font-size:0.77rem}
+.brow{display:flex;gap:0.35rem;flex-wrap:wrap}
+textarea{width:100%;font-size:0.72rem;font-family:monospace;
+  background:var(--surfoff);border:1px solid var(--border);
+  border-radius:var(--r-sm);padding:0.4rem;color:var(--text);resize:vertical}
+.infobox{background:var(--surfoff);border-radius:var(--r-md);padding:0.55rem 0.7rem;
+  font-size:0.76rem;color:var(--muted);line-height:1.5}
+.infobox strong{color:var(--text);font-weight:600}
+hr{border:none;border-top:1px solid var(--div);margin:0.1rem 0}
+.zrow{display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:var(--muted)}
+input[type=range]{accent-color:var(--primary);width:75px}
+
+main{display:flex;flex-direction:column;align-items:center;
+  padding:1.5rem;gap:1.5rem;overflow:auto}
+.gw{position:relative;display:inline-block;margin-top:20px;margin-left:22px}
+.pgrid{display:grid;cursor:crosshair;border:2px solid var(--border);border-radius:var(--r-lg);
+  box-shadow:var(--sh-lg);user-select:none;-webkit-user-select:none;background:#12121f}
+.px{border:0.5px solid #2a2a4a;transition:background 50ms}
+.px:hover::after{content:'';position:absolute;inset:0;background:oklch(1 0 0/0.15);pointer-events:none}
+.rlbls{position:absolute;left:-22px;top:0;display:flex;flex-direction:column}
+.clbls{position:absolute;top:-20px;left:0;display:flex}
+.axl{display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--faint);font-family:monospace;font-weight:600}
+
+.cpanel{width:100%;max-width:760px}
+.cphead{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem}
+.ctitle{font-size:0.83rem;font-weight:600;color:var(--muted)}
+pre{background:var(--surf);border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:1rem 1.25rem;font-family:'Courier New',monospace;font-size:0.77rem;
+  line-height:1.75;overflow-x:auto;white-space:pre;color:var(--text);box-shadow:var(--sh-sm)}
+.kw{color:#4f98a3}.nu{color:#e8af34}.cm{color:var(--faint);font-style:italic}
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--success);color:#fff;
+  padding:0.55rem 1rem;border-radius:var(--r-md);font-size:0.83rem;font-weight:500;
+  opacity:0;transform:translateY(8px);transition:opacity 0.2s,transform 0.2s;pointer-events:none;z-index:100}
+.toast.show{opacity:1;transform:translateY(0)}
+@media(max-width:700px){.app{grid-template-columns:1fr}
+  aside{position:static;max-height:none;flex-direction:row;flex-wrap:wrap;
+    border-right:none;border-bottom:1px solid var(--border)}}
+</style>
+</head>
+<body>
+<div class="app">
+
+<header>
+  <div style="display:flex;align-items:center;gap:0.6rem">
+    <svg class="logo" aria-label="logo" width="26" height="26" viewBox="0 0 28 28" fill="none">
+      <rect x="2" y="2" width="24" height="24" rx="4" stroke="currentColor" stroke-width="1.5"/>
+      <rect x="6" y="6" width="4" height="4" fill="currentColor" rx="0.5"/>
+      <rect x="12" y="6" width="4" height="4" fill="currentColor" rx="0.5" opacity="0.4"/>
+      <rect x="18" y="6" width="4" height="4" fill="currentColor" rx="0.5"/>
+      <rect x="6" y="12" width="4" height="4" fill="currentColor" rx="0.5" opacity="0.4"/>
+      <rect x="12" y="12" width="4" height="4" fill="currentColor" rx="0.5"/>
+      <rect x="18" y="12" width="4" height="4" fill="currentColor" rx="0.5" opacity="0.4"/>
+      <rect x="6" y="18" width="4" height="4" fill="currentColor" rx="0.5"/>
+      <rect x="12" y="18" width="4" height="4" fill="currentColor" rx="0.5" opacity="0.4"/>
+      <rect x="18" y="18" width="4" height="4" fill="currentColor" rx="0.5"/>
+    </svg>
+    <span style="font-weight:700;font-size:1.05rem">C64 Sprite Editor</span>
+    <span class="badge">Hi-Res 24x21</span>
+  </div>
+  <div class="hdr-r">
+    <div class="prev-wrap">
+      <span class="prev-lbl">Podglad 1:1</span>
+      <canvas id="prev" width="24" height="21" style="width:48px;height:42px"></canvas>
+    </div>
+    <span class="prev-lbl" style="margin-left:0.5rem">2x</span>
+    <canvas id="prev2" width="48" height="42" style="width:72px;height:63px"></canvas>
+    <button class="btn btn-g btn-s" data-theme-toggle aria-label="Motyw">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<aside>
+  <div>
+    <div class="lbl">Narzedzie</div>
+    <div class="mode-g">
+      <button class="mbtn on" id="td" onclick="setTool('draw')">Rysuj</button>
+      <button class="mbtn" id="te" onclick="setTool('erase')">Wymazuj</button>
+      <button class="mbtn" id="tf" onclick="setTool('fill')">Wypelnij</button>
+    </div>
+  </div>
+
+  <div>
+    <div class="lbl">Kolor piksela (ON)</div>
+    <div class="crow" id="onSwatches">
+      <div class="sw on" style="background:#f5c842" onclick="setOn('#f5c842',this)"></div>
+      <div class="sw" style="background:#ffffff" onclick="setOn('#ffffff',this)"></div>
+      <div class="sw" style="background:#aaaaff" onclick="setOn('#aaaaff',this)"></div>
+      <div class="sw" style="background:#68d468" onclick="setOn('#68d468',this)"></div>
+      <div class="sw" style="background:#ff7777" onclick="setOn('#ff7777',this)"></div>
+      <div class="sw" style="background:#ffaa55" onclick="setOn('#ffaa55',this)"></div>
+      <input type="color" id="cc" value="#f5c842" oninput="setOn(this.value,null)" title="Wlasny">
+    </div>
+  </div>
+
+  <div>
+    <div class="lbl">Kolor tla (OFF)</div>
+    <div class="crow" id="offSwatches">
+      <div class="sw on" style="background:#1a1a2e" onclick="setOff('#1a1a2e',this)"></div>
+      <div class="sw" style="background:#000000" onclick="setOff('#000000',this)"></div>
+      <div class="sw" style="background:#0d1b2a" onclick="setOff('#0d1b2a',this)"></div>
+      <div class="sw" style="background:#2f1b3e" onclick="setOff('#2f1b3e',this)"></div>
+      <input type="color" id="bc" value="#1a1a2e" oninput="setOff(this.value,null)" title="Wlasny tlo">
+    </div>
+  </div>
+
+  <hr>
+
+  <div>
+    <div class="lbl">Zoom siatki</div>
+    <div class="zrow">
+      <span>8</span>
+      <input type="range" id="zr" min="8" max="28" value="16" step="2" oninput="setZoom(this.value)">
+      <span>28</span>
+      <strong id="zv" style="min-width:2em;text-align:right;color:var(--text)">16px</strong>
+    </div>
+  </div>
+
+  <hr>
+
+  <div>
+    <div class="lbl">Przeksztalcenia</div>
+    <div class="brow">
+      <button class="btn btn-g btn-s" onclick="mH()">Odbij H</button>
+      <button class="btn btn-g btn-s" onclick="mV()">Odbij V</button>
+      <button class="btn btn-g btn-s" onclick="sU()">Gore</button>
+      <button class="btn btn-g btn-s" onclick="sD()">Dol</button>
+      <button class="btn btn-g btn-s" onclick="sL()">Lewo</button>
+      <button class="btn btn-g btn-s" onclick="sR()">Prawo</button>
+      <button class="btn btn-g btn-s" onclick="inv()">Odwroc</button>
+      <button class="btn btn-d btn-s" onclick="clr()">Wyczysc</button>
+    </div>
+  </div>
+
+  <hr>
+
+  <div>
+    <div class="lbl">Wczytaj z kodu C</div>
+    <textarea id="imp" rows="3" placeholder="Wklej bajty: 0x00, 0x3C, ..."></textarea>
+    <button class="btn btn-p btn-s" style="margin-top:0.35rem;width:100%" onclick="doImport()">Wczytaj tablice</button>
+  </div>
+
+  <div class="infobox">
+    <strong>Format C64 sprite:</strong><br>
+    24x21 px = 64 bajtow (63+1)<br>
+    3 bajty = 1 wiersz (24 bity)<br>
+    Bit 7 = lewy piksel
+  </div>
+</aside>
+
+<main>
+  <div class="gw">
+    <div class="clbls" id="cl"></div>
+    <div class="rlbls" id="rl"></div>
+    <div class="pgrid" id="pg"></div>
+  </div>
+  <div class="cpanel">
+    <div class="cphead">
+      <span class="ctitle">Kod C - gotowy do wklejenia w 8bit-Unity / CC65</span>
+      <button class="btn btn-g btn-s" onclick="doCopy()">Kopiuj</button>
+    </div>
+    <pre id="co"></pre>
+  </div>
+</main>
+</div>
+<div class="toast" id="toast">Skopiowano!</div>
+
+<script>
+(function(){
+  const t=document.querySelector('[data-theme-toggle]'),r=document.documentElement;
+  let d=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
+  r.setAttribute('data-theme',d);
+  t&&t.addEventListener('click',()=>{d=d==='dark'?'light':'dark';r.setAttribute('data-theme',d);});
+})();
+
+const C=24,R=21;
+let px=new Uint8Array(C*R),tool='draw',isDown=false,pv=1;
+let onCol='#f5c842',offCol='#1a1a2e',cell=16;
+
+const grid=document.getElementById('pg');
+const p1=document.getElementById('prev'),cx1=p1.getContext('2d');
+const p2=document.getElementById('prev2'),cx2=p2.getContext('2d');
+
+function build(){
+  grid.innerHTML='';
+  grid.style.gridTemplateColumns='repeat('+C+','+cell+'px)';
+  grid.style.gridTemplateRows='repeat('+R+','+cell+'px)';
+  const cl=document.getElementById('cl');cl.innerHTML='';
+  for(let c=0;c<C;c++){
+    const e=document.createElement('div');e.className='axl';
+    e.style.cssText='width:'+cell+'px;height:20px';
+    if(c%8===0)e.textContent=c;cl.appendChild(e);
+  }
+  const rl=document.getElementById('rl');rl.innerHTML='';
+  for(let r=0;r<R;r++){
+    const e=document.createElement('div');e.className='axl';
+    e.style.cssText='height:'+cell+'px;width:20px';
+    e.textContent=r;rl.appendChild(e);
+  }
+  for(let i=0;i<C*R;i++){
+    const d=document.createElement('div');d.className='px';
+    d.style.cssText='width:'+cell+'px;height:'+cell+'px';d.dataset.i=i;
+    d.addEventListener('mousedown',e=>{
+      e.preventDefault();isDown=true;
+      const idx=+e.target.dataset.i;
+      if(tool==='fill'){fill(idx%C,Math.floor(idx/C),px[idx],1-px[idx]);return;}
+      pv=tool==='erase'?0:(px[idx]?0:1);paint(idx,pv);
+    });
+    d.addEventListener('mouseover',e=>{
+      if(!isDown)return;const idx=+e.target.dataset.i;
+      if(tool==='fill')return;paint(idx,tool==='erase'?0:pv);
+    });
+    grid.appendChild(d);
+  }
+  render();
+}
+
+function paint(i,v){px[i]=v;grid.children[i].style.background=v?onCol:offCol;upd();}
+function render(){for(let i=0;i<C*R;i++)grid.children[i].style.background=px[i]?onCol:offCol;upd();}
+function fill(x,y,tv,rv){
+  if(tv===rv)return;
+  const s=[[x,y]];
+  while(s.length){const[cx,cy]=s.pop();if(cx<0||cx>=C||cy<0||cy>=R)continue;
+    const i=cy*C+cx;if(px[i]!==tv)continue;px[i]=rv;
+    grid.children[i].style.background=rv?onCol:offCol;
+    s.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);}upd();}
+
+document.addEventListener('mouseup',()=>isDown=false);
+
+function setTool(t){tool=t;
+  ['d','e','f'].forEach(x=>document.getElementById('t'+x).classList.remove('on'));
+  document.getElementById('t'+t[0]).classList.add('on');}
+function setOn(c,el){onCol=c;document.getElementById('cc').value=c;
+  document.querySelectorAll('#onSwatches .sw').forEach(s=>s.classList.remove('on'));
+  if(el)el.classList.add('on');render();}
+function setOff(c,el){offCol=c;document.getElementById('bc').value=c;
+  document.querySelectorAll('#offSwatches .sw').forEach(s=>s.classList.remove('on'));
+  if(el)el.classList.add('on');render();}
+function setZoom(v){cell=+v;document.getElementById('zv').textContent=v+'px';build();}
+
+function mH(){for(let r=0;r<R;r++)for(let c=0;c<Math.floor(C/2);c++){
+  const a=r*C+c,b=r*C+(C-1-c);[px[a],px[b]]=[px[b],px[a]];}render();}
+function mV(){for(let r=0;r<Math.floor(R/2);r++)for(let c=0;c<C;c++){
+  const a=r*C+c,b=(R-1-r)*C+c;[px[a],px[b]]=[px[b],px[a]];}render();}
+function sU(){const r0=px.slice(0,C);px.copyWithin(0,C);px.set(r0,(R-1)*C);render();}
+function sD(){const rL=px.slice((R-1)*C);px.copyWithin(C,0,(R-1)*C);px.set(rL,0);render();}
+function sL(){for(let r=0;r<R;r++){const f=px[r*C];
+  px.copyWithin(r*C,r*C+1,r*C+C);px[r*C+C-1]=f;}render();}
+function sR(){for(let r=0;r<R;r++){const l=px[r*C+C-1];
+  for(let c=C-1;c>0;c--)px[r*C+c]=px[r*C+c-1];px[r*C]=l;}render();}
+function inv(){for(let i=0;i<px.length;i++)px[i]=px[i]?0:1;render();}
+function clr(){px.fill(0);render();}
+
+function toBytes(){
+  const b=[];
+  for(let r=0;r<R;r++){
+    for(let bi=0;bi<3;bi++){
+      let byte=0;
+      for(let bit=0;bit<8;bit++){const col=bi*8+bit;if(col<C&&px[r*C+col])byte|=(1<<(7-bit));}
+      b.push(byte);}}
+  b.push(0);return b;
+}
+function hex(n){return'0x'+n.toString(16).toUpperCase().padStart(2,'0');}
+
+function upd(){
+  const b=toBytes();
+  const lines=[];
+  for(let r=0;r<R;r++){
+    const vs=b.slice(r*3,r*3+3).map(hex).join(', ');
+    const vis=Array.from({length:C},(_,c)=>px[r*C+c]?'X':'.').join('');
+    lines.push('    '+vs+',   // ['+String(r).padStart(2,'0')+'] '+vis);}
+  document.getElementById('co').innerHTML=
+    '<span class="cm">// C64 Hi-Res Sprite 24x21 — gotowy do POKE\n'+
+    '// 64 bajty: 21 wierszy x 3 bajty + 1 dopelnienie\n'+
+    '// Bit 7 = lewy piksel | X=on, .=off</span>\n\n'+
+    '<span class="kw">unsigned char</span> spriteData[<span class="nu">64</span>] = {\n'+
+    '<span class="cm">//  Byte1  Byte2  Byte3   [row] 24 piksele</span>\n'+
+    lines.join('\n')+'\n'+
+    '    <span class="nu">0x00</span>    <span class="cm">// bajt 64: padding</span>\n'+
+    '};';
+  // preview 1:1
+  cx1.clearRect(0,0,24,21);
+  for(let r=0;r<R;r++)for(let c=0;c<C;c++){
+    cx1.fillStyle=px[r*C+c]?onCol:offCol;cx1.fillRect(c,r,1,1);}
+  // preview 2x
+  cx2.clearRect(0,0,48,42);
+  for(let r=0;r<R;r++)for(let c=0;c<C;c++){
+    cx2.fillStyle=px[r*C+c]?onCol:offCol;cx2.fillRect(c*2,r*2,2,2);}
+}
+
+function doImport(){
+  const raw=document.getElementById('imp').value;
+  const m=raw.match(/0x[0-9a-fA-F]{2}|(?<![0-9.])[0-9]{1,3}(?![0-9.])/g);
+  if(!m){alert('Brak danych! Wklej hex (0x3C) lub decimal (60)');return;}
+  const vals=m.map(v=>v.startsWith('0x')?parseInt(v,16):parseInt(v,10));
+  px.fill(0);let bi=0;
+  for(let r=0;r<R&&bi+2<vals.length;r++)
+    for(let br=0;br<3;br++){const byte=vals[bi++];
+      for(let bit=0;bit<8;bit++){const col=br*8+bit;if(col<C)px[r*C+col]=(byte>>(7-bit))&1;}}
+  render();
+}
+
+function doCopy(){
+  const t=document.getElementById('co').textContent;
+  navigator.clipboard.writeText(t).catch(()=>{});
+  const el=document.getElementById('toast');el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),2000);
+}
+
+// Domyslny sprite - postac ludzka
+(function(){
+  const def=[
+    0,0x00,0x00,
+    0,0x3C,0,
+    0,0x7E,0,
+    0,0x42,0,
+    0,0x7E,0,
+    0,0x24,0,
+    0,0x3C,0,
+    0,0x18,0,
+    0,0xFF,0,
+    0,0x3C,0,
+    0,0x3C,0,
+    0,0x3C,0,
+    0,0x3C,0,
+    0,0x7E,0,
+    0,0x66,0,
+    0,0x66,0,
+    0,0x66,0,
+    0,0x66,0,
+    0,0x66,0,
+    0,0xE7,0,
+    0,0x00,0
+  ];
+  for(let r=0;r<R;r++)for(let bi=0;bi<3;bi++){
+    const byte=def[r*3+bi];
+    for(let bit=0;bit<8;bit++){const col=bi*8+bit;if(col<C)px[r*C+col]=(byte>>(7-bit))&1;}}
+})();
+
+build();
+</script>
+</body>
+</html>

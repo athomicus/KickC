@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="pl" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C64 Sprite Editor</title>
+<style>
+:root, [data-theme=light]{
+  --bg:#f7f6f2;--surf:#f9f8f5;--border:#d4d1ca;--text:#28251d;--muted:#7a7974;
+  --primary:#01696f;--primhov:#0c4e54;--primhl:#cedcd8;--success:#437a22;--error:#a12c7b;
+  --r-sm:0.375rem;--r-md:0.5rem;--r-lg:0.75rem;--surfoff:#f3f0ec;--faint:#bab9b4;--div:#dcd9d5;
+}
+[data-theme=dark]{
+  --bg:#171614;--surf:#1c1b19;--border:#393836;--text:#cdccca;--muted:#797876;
+  --primary:#4f98a3;--primhov:#227f8b;--primhl:#313b3b;--success:#6daa45;--error:#d163a7;
+  --surfoff:#1d1c1a;--faint:#5a5957;--div:#262523;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:1rem;line-height:1.5}
+button{cursor:pointer;border:none;background:none;font:inherit;color:inherit}
+.app{display:grid;grid-template-columns:280px 1fr;grid-template-rows:57px 1fr;min-height:100vh}
+header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;background:var(--surf);border-bottom:1px solid var(--border)}
+.badge{font-size:.68rem;font-weight:700;padding:.18em .5em;border-radius:99px;background:var(--primhl);color:var(--primary);text-transform:uppercase}
+.hdr-r{display:flex;align-items:center;gap:.75rem}
+.prev-wrap{display:flex;align-items:center;gap:.5rem}
+.prev-lbl{font-size:.68rem;font-weight:700;text-transform:uppercase;color:var(--faint)}
+canvas{image-rendering:pixelated;border:1px solid var(--border);border-radius:4px}
+aside{background:var(--surf);border-right:1px solid var(--border);padding:1rem;display:flex;flex-direction:column;gap:.9rem;overflow-y:auto;max-height:calc(100vh - 57px);position:sticky;top:57px}
+.lbl{font-size:.68rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem}
+.mode-g{display:flex;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.mbtn{flex:1;padding:.38rem .3rem;font-size:.78rem;color:var(--muted);text-align:center}
+.mbtn.on{background:var(--primary);color:#fff}
+.crow{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
+.sw{width:26px;height:26px;border-radius:var(--r-sm);border:2px solid transparent;cursor:pointer}
+.sw.on{border-color:var(--primary);transform:scale(1.15)}
+input[type=color]{width:32px;height:26px;border:1px solid var(--border);border-radius:var(--r-sm);cursor:pointer;padding:1px;background:var(--surfoff)}
+input[type=text]{width:100%;font-size:.8rem;padding:.35rem .5rem;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surfoff);color:var(--text);font-family:monospace}
+.btn{display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .8rem;border-radius:var(--r-md);font-size:.82rem;white-space:nowrap}
+.btn-p{background:var(--primary);color:#fff}
+.btn-g{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.btn-d{color:var(--error);border:1px solid var(--error)}
+.btn-s{padding:.28rem .6rem;font-size:.77rem}
+.brow{display:flex;gap:.35rem;flex-wrap:wrap}
+textarea{width:100%;font-size:.72rem;font-family:monospace;background:var(--surfoff);border:1px solid var(--border);border-radius:var(--r-sm);padding:.4rem;color:var(--text);resize:vertical}
+.infobox{background:var(--surfoff);border-radius:var(--r-md);padding:.55rem .7rem;font-size:.76rem;color:var(--muted);line-height:1.5}
+.infobox strong{color:var(--text)}
+hr{border:none;border-top:1px solid var(--div);margin:.1rem 0}
+.zrow{display:flex;align-items:center;gap:.4rem;font-size:.8rem;color:var(--muted)}
+input[type=range]{accent-color:var(--primary);width:75px}
+main{display:flex;flex-direction:column;align-items:center;padding:1.5rem;gap:1.5rem;overflow:auto}
+.gw{position:relative;display:inline-block;margin-top:20px;margin-left:22px}
+.pgrid{display:grid;cursor:crosshair;border:2px solid var(--border);border-radius:var(--r-lg);user-select:none;background:#12121f}
+.px{border:.5px solid #2a2a4a}
+.rlbls{position:absolute;left:-22px;top:0;display:flex;flex-direction:column}
+.clbls{position:absolute;top:-20px;left:0;display:flex}
+.axl{display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--faint);font-family:monospace}
+.cpanel{width:100%;max-width:760px}
+.cphead{display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;gap:.5rem;flex-wrap:wrap}
+.ctitle{font-size:.83rem;color:var(--muted)}
+.cfields{display:flex;gap:.5rem;flex:1;max-width:400px}
+pre{background:var(--surf);border:1px solid var(--border);border-radius:var(--r-lg);padding:1rem 1.25rem;font-family:'Courier New',monospace;font-size:.77rem;line-height:1.6;overflow-x:auto;white-space:pre;color:var(--text)}
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--success);color:#fff;padding:.55rem 1rem;border-radius:var(--r-md);font-size:.83rem;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div style="display:flex;align-items:center;gap:.6rem">
+      <span style="font-weight:700;font-size:1.05rem;color:var(--primary)">C64 Sprite Editor</span>
+      <span class="badge">Hi-Res 24x21</span>
+    </div>
+    <div class="hdr-r">
+      <div class="prev-wrap"><span class="prev-lbl">1x</span><canvas id="prev" width="24" height="21" style="width:48px;height:42px"></canvas></div>
+      <div class="prev-wrap"><span class="prev-lbl">2x</span><canvas id="prev2" width="48" height="42" style="width:72px;height:63px"></canvas></div>
+      <button class="btn btn-g btn-s" data-theme-toggle>Motyw</button>
+    </div>
+  </header>
+  <aside>
+    <div>
+      <div class="lbl">Narzedzie</div>
+      <div class="mode-g">
+        <button class="mbtn on" id="td" onclick="setTool('draw')">Rysuj</button>
+        <button class="mbtn" id="te" onclick="setTool('erase')">Wymazuj</button>
+        <button class="mbtn" id="tf" onclick="setTool('fill')">Wypelnij</button>
+      </div>
+    </div>
+    <div>
+      <div class="lbl">Kolor ON</div>
+      <div class="crow" id="onSwatches">
+        <div class="sw on" style="background:#f5c842" onclick="setOn('#f5c842',this)"></div>
+        <div class="sw" style="background:#ffffff" onclick="setOn('#ffffff',this)"></div>
+        <div class="sw" style="background:#aaaaff" onclick="setOn('#aaaaff',this)"></div>
+        <div class="sw" style="background:#68d468" onclick="setOn('#68d468',this)"></div>
+        <input type="color" id="cc" value="#f5c842" oninput="setOn(this.value,null)">
+      </div>
+    </div>
+    <div>
+      <div class="lbl">Kolor tla OFF</div>
+      <div class="crow" id="offSwatches">
+        <div class="sw on" style="background:#1a1a2e" onclick="setOff('#1a1a2e',this)"></div>
+        <div class="sw" style="background:#000000" onclick="setOff('#000000',this)"></div>
+        <input type="color" id="bc" value="#1a1a2e" oninput="setOff(this.value,null)">
+      </div>
+    </div>
+    <hr>
+    <div>
+      <div class="lbl">Zoom</div>
+      <div class="zrow"><span>8</span><input type="range" id="zr" min="8" max="28" value="16" step="2" oninput="setZoom(this.value)"><span>28</span><strong id="zv">16px</strong></div>
+    </div>
+    <hr>
+    <div>
+      <div class="lbl">Przeksztalcenia</div>
+      <div class="brow">
+        <button class="btn btn-g btn-s" onclick="mH()">Odbij H</button>
+        <button class="btn btn-g btn-s" onclick="mV()">Odbij V</button>
+        <button class="btn btn-g btn-s" onclick="sU()">Gora</button>
+        <button class="btn btn-g btn-s" onclick="sD()">Dol</button>
+        <button class="btn btn-g btn-s" onclick="sL()">Lewo</button>
+        <button class="btn btn-g btn-s" onclick="sR()">Prawo</button>
+        <button class="btn btn-g btn-s" onclick="inv()">Odwroc</button>
+        <button class="btn btn-d btn-s" onclick="clr()">Wyczysc</button>
+      </div>
+    </div>
+    <hr>
+    <div>
+      <div class="lbl">Wczytaj z kodu C</div>
+      <textarea id="imp" rows="3" placeholder="0x00, 0x3C, ..."></textarea>
+      <button class="btn btn-p btn-s" style="margin-top:.35rem;width:100%" onclick="doImport()">Wczytaj</button>
+    </div>
+    <div class="infobox"><strong>Format C64 sprite</strong><br>24x21 px, 64 bajtow<br>3 bajty/wiersz, bit 7=lewy piksel</div>
+  </aside>
+  <main>
+    <div class="gw">
+      <div class="clbls" id="cl"></div>
+      <div class="rlbls" id="rl"></div>
+      <div class="pgrid" id="pg"></div>
+    </div>
+    <div class="cpanel">
+      <div class="cphead">
+        <span class="ctitle">Kod C - KickC / CC65</span>
+        <div class="cfields">
+          <input type="text" id="varname" value="SPRITE_DATA" oninput="upd()">
+          <input type="text" id="varaddr" value="0x2000" oninput="upd()">
+        </div>
+        <button class="btn btn-g btn-s" onclick="doCopy()">Kopiuj</button>
+      </div>
+      <pre id="co"></pre>
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast">Skopiowano!</div>
+<script>
+const themeBtn=document.querySelector('[data-theme-toggle]'),r=document.documentElement;
+let d=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
+r.setAttribute('data-theme',d);
+themeBtn.addEventListener('click',()=>{d=d==='dark'?'light':'dark';r.setAttribute('data-theme',d);});
+const C=24,R=21;
+let px=new Uint8Array(C*R),tool='draw',isDown=false,pv=1;
+let onCol='#f5c842',offCol='#1a1a2e',cell=16;
+const grid=document.getElementById('pg');
+const p1=document.getElementById('prev'),cx1=p1.getContext('2d');
+const p2=document.getElementById('prev2'),cx2=p2.getContext('2d');
+function build(){
+  grid.innerHTML='';
+  grid.style.gridTemplateColumns=`repeat(${C}, ${cell}px)`;
+  grid.style.gridTemplateRows=`repeat(${R}, ${cell}px)`;
+  const cl=document.getElementById('cl');cl.innerHTML='';
+  for(let c=0;c<C;c++){const e=document.createElement('div');e.className='axl';e.style.cssText=`width:${cell}px;height:20px`;if(c%8===0)e.textContent=c;cl.appendChild(e);}
+  const rl=document.getElementById('rl');rl.innerHTML='';
+  for(let r2=0;r2<R;r2++){const e=document.createElement('div');e.className='axl';e.style.cssText=`height:${cell}px;width:20px`;e.textContent=r2;rl.appendChild(e);}
+  for(let i=0;i<C*R;i++){
+    const cellDiv=document.createElement('div');
+    cellDiv.className='px';cellDiv.style.cssText=`width:${cell}px;height:${cell}px`;cellDiv.dataset.i=i;
+    cellDiv.addEventListener('mousedown',e=>{
+      e.preventDefault();isDown=true;
+      const idx=+e.target.dataset.i;
+      if(tool==='fill'){fill(idx%C,Math.floor(idx/C),px[idx],1-px[idx]);return;}
+      pv=tool==='erase'?0:(px[idx]?0:1);
+      paint(idx,pv);
+    });
+    cellDiv.addEventListener('mouseover',e=>{
+      if(!isDown)return;
+      const idx=+e.target.dataset.i;
+      if(tool==='fill')return;
+      paint(idx,tool==='erase'?0:pv);
+    });
+    grid.appendChild(cellDiv);
+  }
+  render();
+}
+function paint(i,v){px[i]=v;grid.children[i].style.background=v?onCol:offCol;upd();}
+function render(){for(let i=0;i<C*R;i++)grid.children[i].style.background=px[i]?onCol:offCol;upd();}
+function fill(x,y,tv,rv){
+  if(tv===rv)return;
+  const s=[[x,y]];
+  while(s.length){
+    const[cx,cy]=s.pop();
+    if(cx<0||cx>=C||cy<0||cy>=R)continue;
+    const i=cy*C+cx;
+    if(px[i]!==tv)continue;
+    px[i]=rv;grid.children[i].style.background=rv?onCol:offCol;
+    s.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);
+  }
+  upd();
+}
+document.addEventListener('mouseup',()=>isDown=false);
+function setTool(x){tool=x;['td','te','tf'].forEach(id=>document.getElementById(id).classList.remove('on'));document.getElementById('t'+x[0]).classList.add('on');}
+function setOn(c,el){onCol=c;document.getElementById('cc').value=c;document.querySelectorAll('#onSwatches .sw').forEach(s=>s.classList.remove('on'));if(el)el.classList.add('on');render();}
+function setOff(c,el){offCol=c;document.getElementById('bc').value=c;document.querySelectorAll('#offSwatches .sw').forEach(s=>s.classList.remove('on'));if(el)el.classList.add('on');render();}
+function setZoom(v){cell=+v;document.getElementById('zv').textContent=v+'px';build();}
+function mH(){for(let r2=0;r2<R;r2++)for(let c=0;c<Math.floor(C/2);c++){const a=r2*C+c,b=r2*C+(C-1-c);[px[a],px[b]]=[px[b],px[a]];}render();}
+function mV(){for(let r2=0;r2<Math.floor(R/2);r2++)for(let c=0;c<C;c++){const a=r2*C+c,b=(R-1-r2)*C+c;[px[a],px[b]]=[px[b],px[a]];}render();}
+function sU(){const r0=px.slice(0,C);px.copyWithin(0,C);px.set(r0,(R-1)*C);render();}
+function sD(){const rL=px.slice((R-1)*C);px.copyWithin(C,0,(R-1)*C);px.set(rL,0);render();}
+function sL(){for(let r2=0;r2<R;r2++){const f=px[r2*C];px.copyWithin(r2*C,r2*C+1,r2*C+C);px[r2*C+C-1]=f;}render();}
+function sR(){for(let r2=0;r2<R;r2++){const l=px[r2*C+C-1];for(let c=C-1;c>0;c--)px[r2*C+c]=px[r2*C+c-1];px[r2*C]=l;}render();}
+function inv(){for(let i=0;i<px.length;i++)px[i]=px[i]?0:1;render();}
+function clr(){px.fill(0);render();}
+function toBytes(){
+  const b=[];
+  for(let r2=0;r2<R;r2++){
+    for(let bi=0;bi<3;bi++){
+      let byte=0;
+      for(let bit=0;bit<8;bit++){
+        const col=bi*8+bit;
+        if(col<C&&px[r2*C+col])byte|=(1<<(7-bit));
+      }
+      b.push(byte);
+    }
+  }
+  b.push(0);
+  return b;
+}
+function hex(n){return '0x'+n.toString(16).toUpperCase().padStart(2,'0');}
+function upd(){
+  const b=toBytes();
+  const name=(document.getElementById('varname').value||'SPRITE_DATA').trim();
+  const addr=(document.getElementById('varaddr').value||'0x2000').trim();
+  const lines=[];
+  for(let i=0;i<b.length;i+=8){lines.push('    '+b.slice(i,i+8).map(hex).join(','));}
+  document.getElementById('co').textContent=`__export __address(${addr}) char ${name}[64] = {\n`+lines.join(',\n')+`\n};`;
+  cx1.clearRect(0,0,24,21);
+  for(let r2=0;r2<R;r2++)for(let c=0;c<C;c++){cx1.fillStyle=px[r2*C+c]?onCol:offCol;cx1.fillRect(c,r2,1,1);}
+  cx2.clearRect(0,0,48,42);
+  for(let r2=0;r2<R;r2++)for(let c=0;c<C;c++){cx2.fillStyle=px[r2*C+c]?onCol:offCol;cx2.fillRect(c*2,r2*2,2,2);}
+}
+function doImport(){
+  const raw=document.getElementById('imp').value;
+  const m=raw.match(/0x[0-9a-fA-F]{1,2}|\b[0-9]{1,3}\b/g);
+  if(!m){alert('Brak danych!');return;}
+  const vals=m.map(v=>v.startsWith('0x')?parseInt(v,16):parseInt(v,10));
+  px.fill(0);
+  let bi=0;
+  for(let r2=0;r2<R&&bi+2<vals.length;r2++){
+    for(let br=0;br<3;br++){
+      const byte=vals[bi++];
+      for(let bit=0;bit<8;bit++){
+        const col=br*8+bit;
+        if(col<C)px[r2*C+col]=(byte>>(7-bit))&1;
+      }
+    }
+  }
+  render();build();
+}
+function doCopy(){
+  const txt=document.getElementById('co').textContent;
+  navigator.clipboard.writeText(txt).catch(()=>{});
+  const el=document.getElementById('toast');
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),2000);
+}
+(function(){
+  const def=[0x00,0x3C,0x00,0x7E,0x42,0x7E,0x24,0x3C,0x18,0xFF,0x3C,0x3C,0x3C,0x3C,0x7E,0x66,0x66,0x66,0x66,0x66,0xE7,0x00];
+  for(let r2=0;r2<R;r2++){
+    const byte=def[r2]||0;
+    for(let bit=0;bit<8;bit++){
+      const col=8+bit;
+      if(col<C)px[r2*C+col]=(byte>>(7-bit))&1;
+    }
+  }
+  build();
+})();
+</script>
+</body>
+</html>
