@@ -1,0 +1,8 @@
+create from bitmap code for sprites (draw on background), remove color code only from data and decrease size
+
+python3 konwerter32px.py n05.png n05 1
+
+python3 konwerter32px.py sprite.png sprite 0   # czarny
+python3 konwerter32px.py grass.png grass 5     # zielony
+python3 konwerter32px.py sky.png sky 6         # niebieski
+python3 konwerter32px.py sand.png sand 9       # brazowy
