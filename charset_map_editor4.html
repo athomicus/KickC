@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>C64 Charset Editor (8x8 hires) + Map Editor</title>
+<style>
+body { font-family: sans-serif; background:#222; color:#eee; margin:0; padding:16px; }
+h1,h2 { color:#8fd; }
+.section { background:#2b2b2b; border:1px solid #444; border-radius:8px; padding:12px; margin-bottom:16px; }
+canvas { border:1px solid #666; background:#000; image-rendering: pixelated; cursor:crosshair; }
+button { background:#444; color:#eee; border:1px solid #666; border-radius:4px; padding:6px 10px; margin:4px 2px; cursor:pointer; }
+button:hover { background:#555; }
+input[type=number] { width:60px; background:#333; color:#eee; border:1px solid #666; border-radius:4px; padding:4px; }
+input[type=range] { width:160px; vertical-align:middle; }
+textarea { width:100%; height:160px; background:#111; color:#9f9; font-family:monospace; font-size:12px; }
+.row { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
+.charset-grid { display:flex; flex-wrap:wrap; gap:2px; max-width:520px; }
+.charset-grid div { width:24px; height:24px; background:#333; border:1px solid #555; display:flex; align-items:center; justify-content:center; font-size:9px; cursor:pointer; }
+.charset-grid div.active { border:2px solid #8fd; }
+.charset-grid div.filled { background:#2a3; }
+label { display:inline-block; margin-right:8px; margin-top:6px; }
+#fileInput, #imgFileInput { display:none; }
+.hint { color:#aaa; font-size:12px; }
+select { background:#333; color:#eee; border:1px solid #666; border-radius:4px; padding:4px; }
+.previewRow { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.thumbBox { display:flex; flex-direction:column; align-items:center; }
+.thumbBox canvas { width:64px; height:64px; }
+.thumbBox span { font-size:10px; color:#aaa; }
+</style>
+</head>
+<body>
+<h1>C64 Charset Editor (8x8 hires) + Map Editor</h1>
+
+<div class="section">
+  <h2>0. Projekt (zapis / wczytanie całości)</h2>
+  <p class="hint">Zapisuje charset + mapę + ustawienia do jednego pliku .json, żeby wczytać go później i kontynuować pracę bez rysowania od nowa.</p>
+  <button id="btnSaveProject">💾 Zapisz projekt (.json)</button>
+  <button id="btnLoadProject">📂 Wczytaj projekt (.json)</button>
+  <input type="file" id="fileInput" accept=".json,application/json">
+  <span id="projectStatus" class="hint"></span>
+</div>
+
+<div class="section">
+  <h2>0b. Import znaków z obrazka (PNG/JPG)</h2>
+  <p class="hint">Wczytaj obrazek 8x8, 16x16 lub 32x32 px. Program automatycznie pokroi go na kafelki 8x8 i wpisze je jako kolejne znaki w wolne miejsca charsetu (16x16 → 4 znaki, 32x32 → 16 znaków). Obrazek jest binaryzowany (czarno-biały) według progu poniżej.</p>
+  <label>Próg binaryzacji: <input type="range" id="threshold" min="0" max="255" value="128"><span id="thresholdVal">128</span></label>
+  <br>
+  <label><input type="checkbox" id="invertImport"> Odwróć kolory po imporcie</label>
+  <br>
+  <label>Wstaw od znaku: <input type="number" id="importStartIndex" value="0" min="0" max="255"></label>
+  <label><input type="checkbox" id="autoFindFree" checked> Automatycznie szukaj wolnych miejsc (puste znaki) zamiast nadpisywać</label>
+  <br>
+  <button id="btnImportImage">🖼️ Wczytaj obrazek (8x8 / 16x16 / 32x32)</button>
+  <input type="file" id="imgFileInput" accept="image/png,image/jpeg">
+  <div id="importStatus" class="hint"></div>
+  <div class="previewRow" id="importPreview"></div>
+</div>
+
+<div class="section">
+  <h2>1. Rysowanie znaku (8x8)</h2>
+  <canvas id="charCanvas" width="256" height="256"></canvas>
+  <div>
+    <button id="btnClearChar">Wyczyść znak</button>
+    <button id="btnInvertChar">Odwróć</button>
+    <button id="btnCopyChar">Kopiuj</button>
+    <button id="btnPasteChar">Wklej</button>
+  </div>
+  <div>
+    Podgląd 1:1: <canvas id="previewCanvas" width="8" height="8" style="width:32px;height:32px;"></canvas>
+  </div>
+</div>
+
+<div class="section">
+  <h2>2. Zestaw znaków (charset, max 256)</h2>
+  <label>Liczba znaków: <input type="number" id="numChars" value="16" min="1" max="256"></label>
+  <button id="btnAddChar">+ Dodaj znak</button>
+  <div>Aktualny znak: <span id="currentCharLabel">0</span></div>
+  <div class="charset-grid" id="charsetGrid"></div>
+</div>
+
+<div class="section">
+  <h2>3. Mapa (kafelki wskazują numer znaku)</h2>
+  <p class="hint">Kafelki na mapie renderują realny wzór graficzny znaku z charsetu (nie samą cyfrę), żeby łatwiej było wypełniać mapę bez gubienia się, gdzie co się łączy. Mały numer w rogu każdej komórki dalej pokazuje indeks znaku dla orientacji.</p>
+  <label>Szerokość: <input type="number" id="mapWidth" value="20" min="1" max="128"></label>
+  <label>Wysokość: <input type="number" id="mapHeight" value="15" min="1" max="128"></label>
+  <label>Rozmiar komórki (px): <input type="number" id="cellSize" value="16" min="4" max="48"></label>
+  <br>
+  <label><input type="checkbox" id="showTileNumbers" checked> Pokazuj numer znaku w rogu komórki</label>
+  <br>
+  <button id="btnFillMap">Wypełnij aktualnym znakiem</button>
+  <button id="btnClearMap">Wyczyść mapę (0)</button>
+  <br>
+  <canvas id="mapCanvas" width="320" height="240"></canvas>
+</div>
+
+<div class="section">
+  <h2>Eksport charsetu (KickC array, do wklejenia w gfx.c)</h2>
+  <button id="btnGenCharCode">Generuj kod C (charset)</button>
+  <button id="btnDownloadCharBin">Pobierz jako .bin (charset)</button>
+  <textarea id="charCodeOutput" readonly></textarea>
+</div>
+
+<div class="section">
+  <h2>Eksport mapy (KickC array, do wklejenia w gfx.c)</h2>
+  <p class="hint">Eksportuje mapę jako PŁASKĄ tablicę 1D (nie tablicę tablic!), bo KickC nie generuje kodu ASM dla podwójnego indeksowania zmiennymi runtime (map[row][col]). W kodzie C odczytujesz kafelek jako <code>map[(word)row * MAP_WIDTH + col]</code>.</p>
+  <button id="btnGenMapCode">Generuj kod C (mapa)</button>
+  <button id="btnDownloadMapBin">Pobierz jako .bin (mapa)</button>
+  <textarea id="mapCodeOutput" readonly></textarea>
+</div>
+
+<script>
+const CHAR_PIXELS = 8;
+let charset = [makeEmptyChar()];
+let currentChar = 0;
+let clipboard = null;
+
+let mapW = 20, mapH = 15;
+let map = new Array(mapW*mapH).fill(0);
+
+function makeEmptyChar(){ return new Array(8).fill(0).map(()=> new Array(8).fill(0)); }
+function isCharEmpty(c){ return c.every(row=>row.every(v=>v===0)); }
+
+const charCanvas = document.getElementById('charCanvas');
+const ctx = charCanvas.getContext('2d');
+const previewCanvas = document.getElementById('previewCanvas');
+const pctx = previewCanvas.getContext('2d');
+const cellPx = 32;
+
+function drawCharCanvas(){
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,charCanvas.width,charCanvas.height);
+  const c = charset[currentChar];
+  for(let y=0;y<8;y++){
+    for(let x=0;x<8;x++){
+      ctx.fillStyle = c[y][x] ? '#9f9' : '#111';
+      ctx.fillRect(x*cellPx, y*cellPx, cellPx-1, cellPx-1);
+    }
+  }
+  drawPreview();
+}
+function drawPreview(){
+  const c = charset[currentChar];
+  const img = pctx.createImageData(8,8);
+  for(let y=0;y<8;y++) for(let x=0;x<8;x++){
+    const i = (y*8+x)*4;
+    const on = c[y][x];
+    img.data[i]=on?200:0; img.data[i+1]=on?255:0; img.data[i+2]=on?200:0; img.data[i+3]=255;
+  }
+  pctx.putImageData(img,0,0);
+}
+
+charCanvas.addEventListener('mousedown', e=>{
+  const rect = charCanvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX-rect.left)/cellPx);
+  const y = Math.floor((e.clientY-rect.top)/cellPx);
+  if(x>=0&&x<8&&y>=0&&y<8){
+    charset[currentChar][y][x] = charset[currentChar][y][x]?0:1;
+    drawCharCanvas();
+    renderCharsetGrid();
+    drawMap();
+  }
+});
+
+document.getElementById('btnClearChar').onclick = ()=>{
+  charset[currentChar] = makeEmptyChar(); drawCharCanvas(); renderCharsetGrid(); drawMap();
+};
+document.getElementById('btnInvertChar').onclick = ()=>{
+  charset[currentChar] = charset[currentChar].map(row=>row.map(v=>v?0:1));
+  drawCharCanvas(); renderCharsetGrid(); drawMap();
+};
+document.getElementById('btnCopyChar').onclick = ()=>{
+  clipboard = JSON.parse(JSON.stringify(charset[currentChar]));
+};
+document.getElementById('btnPasteChar').onclick = ()=>{
+  if(clipboard){ charset[currentChar] = JSON.parse(JSON.stringify(clipboard)); drawCharCanvas(); renderCharsetGrid(); drawMap(); }
+};
+
+document.getElementById('btnAddChar').onclick = ()=>{
+  const n = parseInt(document.getElementById('numChars').value)||16;
+  while(charset.length < n && charset.length < 256){ charset.push(makeEmptyChar()); }
+  renderCharsetGrid();
+};
+
+function renderCharsetGrid(){
+  const grid = document.getElementById('charsetGrid');
+  grid.innerHTML = '';
+  charset.forEach((c, idx)=>{
+    const div = document.createElement('div');
+    div.textContent = idx;
+    if(idx===currentChar) div.classList.add('active');
+    if(!isCharEmpty(c)) div.classList.add('filled');
+    div.onclick = ()=>{ currentChar = idx; document.getElementById('currentCharLabel').textContent = idx; drawCharCanvas(); renderCharsetGrid(); };
+    grid.appendChild(div);
+  });
+}
+
+document.getElementById('numChars').addEventListener('change', e=>{
+  const n = Math.max(1, Math.min(256, parseInt(e.target.value)||16));
+  if(n > charset.length){
+    while(charset.length < n) charset.push(makeEmptyChar());
+  } else if(n < charset.length){
+    charset = charset.slice(0, n);
+    if(currentChar >= n) currentChar = n-1;
+  }
+  renderCharsetGrid();
+  drawCharCanvas();
+  drawMap();
+});
+
+const mapCanvas = document.getElementById('mapCanvas');
+const mctx = mapCanvas.getContext('2d');
+function resizeMapCanvas(){
+  const cs = parseInt(document.getElementById('cellSize').value)||16;
+  mapCanvas.width = mapW*cs;
+  mapCanvas.height = mapH*cs;
+}
+
+// Rysuje w mapie realny wzor graficzny znaku (8x8) ze charsetu, przeskalowany
+// do rozmiaru komorki cs x cs, zamiast samej cyfry z numerem znaku. Latwiej
+// wtedy zobaczyc jak faktycznie ulozy sie mapa na ekranie C64.
+function drawTileGraphic(px, py, cs, charIdx){
+  const c = (charIdx >= 0 && charIdx < charset.length) ? charset[charIdx] : null;
+  const scale = cs / 8;
+  if(!c){
+    mctx.fillStyle = '#000';
+    mctx.fillRect(px, py, cs, cs);
+    return;
+  }
+  for(let y=0;y<8;y++){
+    for(let x=0;x<8;x++){
+      mctx.fillStyle = c[y][x] ? '#9f9' : '#000';
+      mctx.fillRect(px + x*scale, py + y*scale, Math.ceil(scale), Math.ceil(scale));
+    }
+  }
+}
+
+function drawMap(){
+  const cs = parseInt(document.getElementById('cellSize').value)||16;
+  const showNumbers = document.getElementById('showTileNumbers').checked;
+  mctx.fillStyle = '#000'; mctx.fillRect(0,0,mapCanvas.width, mapCanvas.height);
+  for(let y=0;y<mapH;y++){
+    for(let x=0;x<mapW;x++){
+      const idx = map[y*mapW+x];
+      const px = x*cs, py = y*cs;
+      drawTileGraphic(px, py, cs, idx);
+      mctx.strokeStyle = '#333';
+      mctx.strokeRect(px, py, cs, cs);
+      if(showNumbers){
+        mctx.fillStyle = 'rgba(0,0,0,0.55)';
+        const labelW = Math.min(cs, 8 + String(idx).length*5);
+        mctx.fillRect(px, py, labelW, Math.min(cs, 10));
+        mctx.fillStyle = '#8fd';
+        mctx.font = Math.max(7, cs*0.28)+'px monospace';
+        mctx.fillText(idx, px+1, py + Math.max(8, cs*0.28));
+      }
+    }
+  }
+}
+mapCanvas.addEventListener('click', e=>{
+  const cs = parseInt(document.getElementById('cellSize').value)||16;
+  const rect = mapCanvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX-rect.left)/cs);
+  const y = Math.floor((e.clientY-rect.top)/cs);
+  if(x>=0&&x<mapW&&y>=0&&y<mapH){
+    map[y*mapW+x] = currentChar;
+    drawMap();
+  }
+});
+
+document.getElementById('mapWidth').addEventListener('change', e=>{ resizeMapFromInputs(); });
+document.getElementById('mapHeight').addEventListener('change', e=>{ resizeMapFromInputs(); });
+document.getElementById('cellSize').addEventListener('change', ()=>{ resizeMapCanvas(); drawMap(); });
+document.getElementById('showTileNumbers').addEventListener('change', ()=>{ drawMap(); });
+
+function resizeMapFromInputs(){
+  const newW = parseInt(document.getElementById('mapWidth').value)||mapW;
+  const newH = parseInt(document.getElementById('mapHeight').value)||mapH;
+  const newMap = new Array(newW*newH).fill(0);
+  for(let y=0;y<Math.min(mapH,newH);y++){
+    for(let x=0;x<Math.min(mapW,newW);x++){
+      newMap[y*newW+x] = map[y*mapW+x];
+    }
+  }
+  mapW = newW; mapH = newH; map = newMap;
+  resizeMapCanvas(); drawMap();
+}
+
+document.getElementById('btnFillMap').onclick = ()=>{
+  map = map.map(()=>currentChar); drawMap();
+};
+document.getElementById('btnClearMap').onclick = ()=>{
+  map = map.map(()=>0); drawMap();
+};
+
+function charToByteArray(c){
+  const bytes = [];
+  for(let y=0;y<8;y++){
+    let b=0;
+    for(let x=0;x<8;x++){ b = (b<<1) | (c[y][x]?1:0); }
+    bytes.push(b);
+  }
+  return bytes;
+}
+
+document.getElementById('btnGenCharCode').onclick = ()=>{
+  let out = 'char charset[] = {\n';
+  charset.forEach((c, idx)=>{
+    const bytes = charToByteArray(c);
+    out += '  ' + bytes.map(b=>'0x'+b.toString(16).padStart(2,'0')).join(', ') + ', // char '+idx+'\n';
+  });
+  out += '};\n';
+  document.getElementById('charCodeOutput').value = out;
+};
+
+document.getElementById('btnDownloadCharBin').onclick = ()=>{
+  const bytes = [];
+  charset.forEach(c=> bytes.push(...charToByteArray(c)));
+  downloadBinary(new Uint8Array(bytes), 'charset.bin');
+};
+
+// WAZNE: mapa eksportowana jako PLASKA tablica 1D (KickC nie obsluguje
+// podwojnego indeksowania zmiennymi runtime map[row][col] - patrz notatka w main.c).
+// W kodzie C odczyt kafelka: map[(word)row * MAP_WIDTH + col]
+document.getElementById('btnGenMapCode').onclick = ()=>{
+  let out = '#define MAP_WIDTH  ' + mapW + '\n';
+  out += '#define MAP_HEIGHT ' + mapH + '\n\n';
+  out += 'const unsigned char map[MAP_WIDTH * MAP_HEIGHT] = {\n';
+  for(let y=0;y<mapH;y++){
+    out += '  ' + map.slice(y*mapW,(y+1)*mapW).join(', ') + ',\n';
+  }
+  out += '};\n\n';
+  out += '// Odczyt kafelka: map[(word)row * MAP_WIDTH + col]\n';
+  document.getElementById('mapCodeOutput').value = out;
+};
+
+document.getElementById('btnDownloadMapBin').onclick = ()=>{
+  downloadBinary(new Uint8Array(map), 'map.bin');
+};
+
+function downloadBinary(bytes, filename){
+  const blob = new Blob([bytes], {type:'application/octet-stream'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function saveProject(){
+  const project = {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    currentChar: currentChar,
+    charset: charset,
+    mapW: mapW,
+    mapH: mapH,
+    map: map,
+    cellSize: parseInt(document.getElementById('cellSize').value)||16
+  };
+  const blob = new Blob([JSON.stringify(project)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  a.href = url; a.download = 'c64_charset_project_'+stamp+'.json'; a.click();
+  URL.revokeObjectURL(url);
+  document.getElementById('projectStatus').textContent = 'Zapisano: ' + a.download;
+}
+
+function loadProjectFromFile(file){
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try{
+      const data = JSON.parse(e.target.result);
+      if(!data.charset || !Array.isArray(data.charset)) throw new Error('Nieprawidłowy plik projektu');
+      charset = data.charset;
+      currentChar = data.currentChar || 0;
+      if(currentChar >= charset.length) currentChar = 0;
+      mapW = data.mapW || mapW;
+      mapH = data.mapH || mapH;
+      map = data.map || new Array(mapW*mapH).fill(0);
+      document.getElementById('numChars').value = charset.length;
+      document.getElementById('mapWidth').value = mapW;
+      document.getElementById('mapHeight').value = mapH;
+      if(data.cellSize) document.getElementById('cellSize').value = data.cellSize;
+      document.getElementById('currentCharLabel').textContent = currentChar;
+      resizeMapCanvas();
+      renderCharsetGrid();
+      drawCharCanvas();
+      drawMap();
+      document.getElementById('projectStatus').textContent = 'Wczytano projekt z pliku: ' + file.name + ' (charset: '+charset.length+' znaków, mapa: '+mapW+'x'+mapH+')';
+    }catch(err){
+      document.getElementById('projectStatus').textContent = 'Błąd wczytywania: ' + err.message;
+    }
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById('btnSaveProject').onclick = saveProject;
+document.getElementById('btnLoadProject').onclick = ()=> document.getElementById('fileInput').click();
+document.getElementById('fileInput').addEventListener('change', e=>{
+  if(e.target.files.length) loadProjectFromFile(e.target.files[0]);
+});
+
+document.getElementById('threshold').addEventListener('input', e=>{
+  document.getElementById('thresholdVal').textContent = e.target.value;
+});
+
+function findFreeSlotsStartingAt(startIdx, count){
+  const slots = [];
+  let i = startIdx;
+  while(slots.length < count){
+    if(i >= charset.length){
+      if(charset.length >= 256) break;
+      charset.push(makeEmptyChar());
+    }
+    if(isCharEmpty(charset[i])){
+      slots.push(i);
+    }
+    i++;
+  }
+  return slots;
+}
+
+function nextSequentialSlots(startIdx, count){
+  const slots = [];
+  for(let i=0;i<count;i++){
+    const idx = startIdx + i;
+    while(idx >= charset.length && charset.length < 256){ charset.push(makeEmptyChar()); }
+    if(idx < 256) slots.push(idx);
+  }
+  return slots;
+}
+
+function imageToBits(imgData, w, h, threshold, invert){
+  const bits = [];
+  for(let y=0;y<h;y++){
+    const row = [];
+    for(let x=0;x<w;x++){
+      const i = (y*w+x)*4;
+      const r = imgData.data[i], g = imgData.data[i+1], b = imgData.data[i+2];
+      const lum = 0.299*r + 0.587*g + 0.114*b;
+      let on = lum < threshold ? 1 : 0;
+      if(invert) on = on ? 0 : 1;
+      row.push(on);
+    }
+    bits.push(row);
+  }
+  return bits;
+}
+
+function sliceIntoChars(bits, size){
+  const tilesPerRow = size/8;
+  const chars = [];
+  for(let ty=0; ty<tilesPerRow; ty++){
+    for(let tx=0; tx<tilesPerRow; tx++){
+      const c = makeEmptyChar();
+      for(let y=0;y<8;y++){
+        for(let x=0;x<8;x++){
+          c[y][x] = bits[ty*8+y][tx*8+x];
+        }
+      }
+      chars.push(c);
+    }
+  }
+  return chars;
+}
+
+function renderImportPreview(newChars, slots){
+  const container = document.getElementById('importPreview');
+  container.innerHTML = '';
+  newChars.forEach((c, i)=>{
+    const box = document.createElement('div');
+    box.className = 'thumbBox';
+    const cv = document.createElement('canvas');
+    cv.width = 8; cv.height = 8;
+    const cctx = cv.getContext('2d');
+    const imgd = cctx.createImageData(8,8);
+    for(let y=0;y<8;y++) for(let x=0;x<8;x++){
+      const idx = (y*8+x)*4;
+      const on = c[y][x];
+      imgd.data[idx]=on?200:0; imgd.data[idx+1]=on?255:0; imgd.data[idx+2]=on?200:0; imgd.data[idx+3]=255;
+    }
+    cctx.putImageData(imgd,0,0);
+    box.appendChild(cv);
+    const label = document.createElement('span');
+    label.textContent = '#' + slots[i];
+    box.appendChild(label);
+    container.appendChild(box);
+  });
+}
+
+document.getElementById('btnImportImage').onclick = ()=> document.getElementById('imgFileInput').click();
+
+document.getElementById('imgFileInput').addEventListener('change', e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const img = new Image();
+  const reader = new FileReader();
+  reader.onload = ev=>{
+    img.onload = ()=>{
+      const w = img.naturalWidth, h = img.naturalHeight;
+      const validSizes = [8,16,32];
+      if(w !== h || !validSizes.includes(w)){
+        document.getElementById('importStatus').textContent = 'Błąd: obrazek musi mieć rozmiar 8x8, 16x16 lub 32x32 px (wczytano '+w+'x'+h+'px).';
+        return;
+      }
+      const tmpCanvas = document.createElement('canvas');
+      tmpCanvas.width = w; tmpCanvas.height = h;
+      const tctx = tmpCanvas.getContext('2d');
+      tctx.drawImage(img, 0, 0, w, h);
+      const imgData = tctx.getImageData(0,0,w,h);
+      const threshold = parseInt(document.getElementById('threshold').value);
+      const invert = document.getElementById('invertImport').checked;
+      const bits = imageToBits(imgData, w, h, threshold, invert);
+      const newChars = sliceIntoChars(bits, w);
+
+      const startIdx = parseInt(document.getElementById('importStartIndex').value)||0;
+      const autoFree = document.getElementById('autoFindFree').checked;
+      let slots;
+      if(autoFree){
+        slots = findFreeSlotsStartingAt(startIdx, newChars.length);
+        if(slots.length < newChars.length){
+          document.getElementById('importStatus').textContent = 'Uwaga: brak wolnych miejsc w charsecie (limit 256 znaków). Wpisano tylko '+slots.length+' z '+newChars.length+' znaków.';
+        }
+      } else {
+        slots = nextSequentialSlots(startIdx, newChars.length);
+      }
+
+      slots.forEach((slotIdx, i)=>{
+        charset[slotIdx] = newChars[i];
+      });
+
+      document.getElementById('numChars').value = charset.length;
+      currentChar = slots[0];
+      document.getElementById('currentCharLabel').textContent = currentChar;
+      renderCharsetGrid();
+      drawCharCanvas();
+      renderImportPreview(newChars, slots);
+      drawMap();
+
+      const tilesCount = (w/8)*(h/8);
+      document.getElementById('importStatus').textContent =
+        'Zaimportowano obrazek '+w+'x'+h+'px → '+tilesCount+' znak(ów) 8x8, wpisano do slotów: '+slots.join(', ')+'.';
+      e.target.value = '';
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+resizeMapCanvas();
+renderCharsetGrid();
+drawCharCanvas();
+drawMap();
+</script>
+</body>
+</html>
