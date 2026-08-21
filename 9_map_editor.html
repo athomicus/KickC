@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>C64 Charset Editor 8x8 hires + Map Editor + Kolory</title>
+<style>
+body{font-family:sans-serif;background:#222;color:#eee;margin:0;padding:16px}
+h1,h2{color:#8fd}
+.section{background:#2b2b2b;border:1px solid #444;border-radius:8px;padding:12px;margin-bottom:16px}
+canvas{border:1px solid #666;background:#000;image-rendering:pixelated;cursor:crosshair}
+button{background:#444;color:#eee;border:1px solid #666;border-radius:4px;padding:6px 10px;margin:4px 2px;cursor:pointer}
+button:hover{background:#555}
+button.active-tool{border:2px solid #8fd;background:#365}
+button:disabled{opacity:0.4;cursor:not-allowed}
+input[type=number]{width:60px;background:#333;color:#eee;border:1px solid #666;border-radius:4px;padding:4px}
+input[type=range]{width:160px;vertical-align:middle}
+textarea{width:100%;height:160px;background:#111;color:#9f9;font-family:monospace;font-size:12px}
+.row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+.charset-grid{display:flex;flex-wrap:wrap;gap:2px;max-width:520px}
+.charset-grid div{width:24px;height:24px;background:#333;border:1px solid #555;display:flex;align-items:center;justify-content:center;font-size:9px;cursor:pointer}
+.charset-grid div.active{border:2px solid #8fd}
+.charset-grid div.filled{background:#2a3}
+label{display:inline-block;margin-right:8px;margin-top:6px}
+#fileInput,#imgFileInput{display:none}
+.hint{color:#aaa;font-size:12px}
+select{background:#333;color:#eee;border:1px solid #666;border-radius:4px;padding:4px}
+.previewRow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.thumbBox{display:flex;flex-direction:column;align-items:center}
+.thumbBox canvas{width:64px;height:64px}
+.thumbBox span{font-size:10px;color:#aaa}
+.mapLayout{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.objects-panel{width:230px;background:#1c1c1c;border:1px solid #444;border-radius:6px;padding:8px;max-height:640px;overflow-y:auto}
+.objects-panel h3{margin:4px 0 8px;font-size:13px;color:#8fd}
+.object-item{border:2px solid #555;border-radius:6px;padding:6px;margin-bottom:8px;cursor:pointer;background:#262626;text-align:center}
+.object-item.selected{border-color:#8fd;background:#2a3a2a}
+.object-item canvas{image-rendering:pixelated;border:1px solid #444;background:#000}
+.object-item .objLabel{font-size:11px;color:#ccc;margin-top:4px}
+.object-item .objDel{font-size:10px;color:#f88;cursor:pointer;margin-top:2px}
+.toolRow{margin-bottom:8px}
+.singlechar-grid{display:flex;flex-wrap:wrap;gap:4px}
+.singlechar-item{width:34px;border:2px solid #555;border-radius:4px;padding:2px;cursor:pointer;background:#262626;text-align:center;position:relative}
+.singlechar-item.selected{border-color:#8fd;background:#2a3a2a}
+.singlechar-item.multiselected{border-color:#fd8;background:#3a352a}
+.singlechar-item canvas{image-rendering:pixelated;border:1px solid #444;width:28px;height:28px}
+.singlechar-item span{font-size:9px;color:#ccc;display:block}
+.singlechar-item .colorDot{position:absolute;top:1px;right:1px;width:8px;height:8px;border-radius:50%;border:1px solid #000}
+.panel-divider{border-top:1px solid #444;margin:12px 0 10px}
+.colorSwatch{display:inline-block;width:18px;height:18px;border:1px solid #888;vertical-align:middle;margin-right:6px;border-radius:3px}
+.colorPickerRow{display:flex;flex-wrap:wrap;gap:4px;max-width:420px;margin-top:6px}
+.colorBtn{width:34px;height:28px;border:2px solid #555;border-radius:4px;cursor:pointer}
+.colorBtn.selected{border-color:#fff;box-shadow:0 0 4px #fff}
+.globalColorBox{background:#1c2b1c;border:1px solid #4a6;border-radius:6px;padding:10px;margin-top:10px}
+.globalColorBox h3{margin:0 0 6px;font-size:13px;color:#9f9}
+.multiSelectBar{background:#2b2b1c;border:1px solid #886;border-radius:6px;padding:8px;margin-top:8px}
+.multiSelectBar .hint{color:#dd8}
+</style>
+</head>
+<body>
+<h1>C64 Charset Editor 8x8 hires + Map Editor + Kolory</h1>
+
+<div class="section">
+<h2>0a. Projekt (zapis / wczytanie całości)</h2>
+<p class="hint">Zapisuje charset + mapę + obiekty (multi-tile sprite'y) + KOLORY per znak + ustawienia do jednego pliku .json.</p>
+<button id="btnSaveProject">Zapisz projekt .json</button>
+<button id="btnLoadProject">Wczytaj projekt .json</button>
+<input type="file" id="fileInput" accept=".json,application/json">
+<span id="projectStatus" class="hint"></span>
+</div>
+
+<div class="section">
+<h2>0b. Import znaków / obiektów z obrazka PNG/JPG</h2>
+<p class="hint">Wczytaj obrazek 8x8, 16x16, 32x32 lub 64x64 px. Program pokroi go na kafelki 8x8 i wpisze je do charsetu.</p>
+<label>Próg binaryzacji <input type="range" id="threshold" min="0" max="255" value="128"><span id="thresholdVal">128</span></label><br>
+<label><input type="checkbox" id="invertImport"> Odwróć kolory po imporcie</label><br>
+<label>Wstaw od znaku <input type="number" id="importStartIndex" value="0" min="0" max="255"></label>
+<label><input type="checkbox" id="autoFindFree" checked> Automatycznie szukaj wolnych miejsc (puste znaki zamiast nadpisywać)</label><br>
+<label>Nazwa obiektu (dla 16x16/32x32/64x64) <input type="text" id="objectName" value="" placeholder="np. drzewo, dom, skala" style="width:160px"></label><br>
+<button id="btnImportImage">Wczytaj obrazek (8x8 / 16x16 / 32x32 / 64x64)</button>
+<input type="file" id="imgFileInput" accept="image/png,image/jpeg">
+<div id="importStatus" class="hint"></div>
+<div class="previewRow" id="importPreview"></div>
+</div>
+
+<div class="row">
+<div class="section">
+<h2>1. Rysowanie znaku 8x8</h2>
+<canvas id="charCanvas" width="256" height="256"></canvas><br>
+<button id="btnClearChar">Wyczyść znak</button>
+<button id="btnInvertChar">Odwróć</button>
+<button id="btnCopyChar">Kopiuj</button>
+<button id="btnPasteChar">Wklej</button>
+<div>Podgląd 1:1 <canvas id="previewCanvas" width="8" height="8" style="width:32px;height:32px"></canvas></div>
+
+<div class="panel-divider"></div>
+<h2 style="font-size:14px;margin-bottom:4px">Kolor tego znaku (dla mapy)</h2>
+<p class="hint">Wybierz kolor pierwszoplanowy C64, jaki ten kafelek 8x8 ma mieć w COLOR RAM podczas rysowania mapy.</p>
+<div id="colorPickerRow" class="colorPickerRow"></div>
+<div style="margin-top:6px">Aktualny kolor znaku: <span class="colorSwatch" id="currentColorSwatch"></span><span id="currentColorLabel">0 - czarny</span></div>
+
+<div class="globalColorBox">
+<h3>Zmiana koloru globalnie (wszystkie znaki naraz)</h3>
+<p class="hint">Nadpisuje kolor dla WSZYSTKICH 256 znaków charsetu jednym kliknięciem. Przydatne np. na start pracy, żeby cały charset miał jeden kolor bazowy, a potem doprecyzowujesz pojedyncze znaki.</p>
+<div id="globalColorPickerRow" class="colorPickerRow"></div>
+<button id="btnApplyGlobalColor" style="margin-top:6px">Zastosuj wybrany kolor do WSZYSTKICH znaków</button>
+</div>
+</div>
+
+<div class="section">
+<h2>2. Zestaw znaków (charset, max 256)</h2>
+<label>Liczba znaków <input type="number" id="numChars" value="16" min="1" max="256"></label>
+<button id="btnAddChar">Dodaj znak</button>
+<div>Aktualny znak: <span id="currentCharLabel">0</span></div>
+<div class="charset-grid" id="charsetGrid"></div>
+</div>
+</div>
+
+<div class="section">
+<h2>3. Mapa (kafelki wskazują numer znaku)</h2>
+<p class="hint">Kafelki na mapie renderują realny wzór graficzny znaku z charsetu, W JEGO PRZYPISANYM KOLORZE.</p>
+<label>Szerokość <input type="number" id="mapWidth" value="20" min="1" max="128"></label>
+<label>Wysokość <input type="number" id="mapHeight" value="15" min="1" max="128"></label>
+<label>Rozmiar komórki (px) <input type="number" id="cellSize" value="16" min="4" max="48"></label><br>
+<label><input type="checkbox" id="showTileNumbers" checked> Pokazuj numer znaku w rogu komórki</label><br>
+<div class="toolRow">
+<button id="btnToolSingle" class="active-tool">Tryb: pojedynczy znak</button>
+<button id="btnToolObject">Tryb: stempel obiektu</button>
+<span class="hint" id="toolStatus">Kliknij na mapie, aby wpisać aktualny znak.</span>
+</div>
+<button id="btnFillMap">Wypełnij mapę aktualnym znakiem</button>
+<button id="btnClearMap">Wyczyść mapę (0)</button><br>
+<div class="mapLayout">
+<canvas id="mapCanvas" width="320" height="240"></canvas>
+<div class="objects-panel">
+<h3>Znaki 8x8</h3>
+<p class="hint">Ctrl/Cmd+klik lub klik na kropkę zaznaczenia = wybierz wiele znaków naraz, żeby zmienić im kolor jednocześnie.</p>
+<div id="singleCharList" class="singlechar-grid"></div>
+
+<div class="multiSelectBar">
+<div class="hint" id="multiSelectStatus">Zaznaczono: 0 znaków</div>
+<div id="multiColorPickerRow" class="colorPickerRow"></div>
+<button id="btnApplyMultiColor" disabled>Zastosuj kolor do zaznaczonych</button>
+<button id="btnClearMultiSelect">Wyczyść zaznaczenie</button>
+</div>
+
+<div class="panel-divider"></div>
+<h3>Obiekty (multi-tile sprite'y)</h3>
+<div id="objectsList" class="hint">Brak obiektów - zaimportuj obrazek 16x16, 32x32 lub 64x64 w sekcji 0b.</div>
+</div>
+</div>
+</div>
+
+<div class="section">
+<h2>Eksport charsetu (KickC array, do wklejenia w gfx.h)</h2>
+<button id="btnGenCharCode">Generuj kod C - charset</button>
+<button id="btnDownloadCharBin">Pobierz jako .bin (charset)</button>
+<textarea id="charCodeOutput" readonly></textarea>
+</div>
+
+<div class="section">
+<h2>Eksport kolorów kafelków (KickC array tileColor[], do wklejenia w gfx.h)</h2>
+<p class="hint">Generuje tablicę tileColor[256], indeksowaną numerem znaku.</p>
+<button id="btnGenColorCode">Generuj kod C - tileColor[]</button>
+<textarea id="colorCodeOutput" readonly></textarea>
+</div>
+
+<div class="section">
+<h2>Eksport mapy (KickC array, do wklejenia w gfx.h)</h2>
+<p class="hint">Eksportuje mapę jako PŁASKĄ tablicę 1D. W kodzie C odczytujesz kafelek jako <code>map[(word)row * MAP_WIDTH + col]</code>.</p>
+<button id="btnGenMapCode">Generuj kod C - mapa</button>
+<button id="btnDownloadMapBin">Pobierz jako .bin (mapa)</button>
+<textarea id="mapCodeOutput" readonly></textarea>
+</div>
+
+<script>
+const CHAR_PIXELS = 8;
+let charset = [makeEmptyChar()];
+let charColors = [0];
+let currentChar = 0;
+let clipboard = null;
+let mapW = 20, mapH = 15;
+let map = new Array(mapW*mapH).fill(0);
+let objects = [];
+let selectedObjectIdx = -1;
+let placementTool = 'single';
+let multiSelected = new Set();
+let globalColorChoice = 0;
+let multiColorChoice = 0;
+
+const C64_PALETTE = [
+  {i:0,  name:'czarny',        hex:'#000000'},
+  {i:1,  name:'biały',         hex:'#FFFFFF'},
+  {i:2,  name:'czerwony',      hex:'#883932'},
+  {i:3,  name:'cyan',          hex:'#67B6BD'},
+  {i:4,  name:'purpurowy',     hex:'#8B3F96'},
+  {i:5,  name:'zielony',       hex:'#55A049'},
+  {i:6,  name:'niebieski',     hex:'#40318D'},
+  {i:7,  name:'żółty',         hex:'#BFCE72'},
+  {i:8,  name:'pomarańczowy',  hex:'#8B5429'},
+  {i:9,  name:'brązowy',       hex:'#574200'},
+  {i:10, name:'jasnoczerwony', hex:'#B86962'},
+  {i:11, name:'ciemnoszary',   hex:'#505050'},
+  {i:12, name:'szary',         hex:'#787878'},
+  {i:13, name:'jasnozielony',  hex:'#94E089'},
+  {i:14, name:'jasnoniebieski',hex:'#7869C4'},
+  {i:15, name:'jasnoszary',    hex:'#9F9F9F'}
+];
+
+function makeEmptyChar(){ return new Array(8).fill(0).map(()=>new Array(8).fill(0)); }
+function isCharEmpty(c){ return c.every(row=>row.every(v=>v===0)); }
+
+const charCanvas = document.getElementById('charCanvas');
+const ctx = charCanvas.getContext('2d');
+const previewCanvas = document.getElementById('previewCanvas');
+const pctx = previewCanvas.getContext('2d');
+const cellPx = 32;
+
+function drawCharCanvas(){
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0,0,charCanvas.width,charCanvas.height);
+  const c = charset[currentChar];
+  for(let y=0;y<8;y++) for(let x=0;x<8;x++){
+    ctx.fillStyle = c[y][x] ? '#9f9' : '#111';
+    ctx.fillRect(x*cellPx, y*cellPx, cellPx-1, cellPx-1);
+  }
+  drawPreview();
+  updateColorPickerUI();
+}
+
+function drawPreview(){
+  const c = charset[currentChar];
+  const img = pctx.createImageData(8,8);
+  for(let y=0;y<8;y++) for(let x=0;x<8;x++){
+    const i=(y*8+x)*4;
+    const on=c[y][x];
+    img.data[i]=on?0:0; img.data[i+1]=on?255:0; img.data[i+2]=on?0:0; img.data[i+3]=255;
+  }
+  pctx.putImageData(img,0,0);
+}
+
+charCanvas.addEventListener('mousedown', e=>{
+  const rect = charCanvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX-rect.left)/cellPx);
+  const y = Math.floor((e.clientY-rect.top)/cellPx);
+  if(x>=0&&x<8&&y>=0&&y<8){
+    charset[currentChar][y][x] = charset[currentChar][y][x] ? 0 : 1;
+    drawCharCanvas(); renderCharsetGrid(); renderSingleCharList(); drawMap();
+  }
+});
+
+document.getElementById('btnClearChar').onclick = ()=>{
+  charset[currentChar] = makeEmptyChar();
+  drawCharCanvas(); renderCharsetGrid(); renderSingleCharList(); drawMap();
+};
+document.getElementById('btnInvertChar').onclick = ()=>{
+  charset[currentChar] = charset[currentChar].map(row=>row.map(v=>v?0:1));
+  drawCharCanvas(); renderCharsetGrid(); renderSingleCharList(); drawMap();
+};
+document.getElementById('btnCopyChar').onclick = ()=>{ clipboard = JSON.parse(JSON.stringify(charset[currentChar])); };
+document.getElementById('btnPasteChar').onclick = ()=>{
+  if(clipboard){ charset[currentChar] = JSON.parse(JSON.stringify(clipboard)); drawCharCanvas(); renderCharsetGrid(); renderSingleCharList(); drawMap(); }
+};
+
+// --- KOLOR POJEDYNCZEGO ZNAKU ---
+function buildColorPicker(){
+  const row = document.getElementById('colorPickerRow');
+  row.innerHTML='';
+  C64_PALETTE.forEach(col=>{
+    const b = document.createElement('div');
+    b.className='colorBtn';
+    b.style.background = col.hex;
+    b.title = col.i+' - '+col.name;
+    b.dataset.idx = col.i;
+    b.onclick = ()=>{ setCurrentCharColor(col.i); };
+    row.appendChild(b);
+  });
+}
+function setCurrentCharColor(idx){
+  charColors[currentChar] = idx;
+  updateColorPickerUI();
+  renderSingleCharList();
+  drawMap();
+}
+function updateColorPickerUI(){
+  const col = charColors[currentChar] || 0;
+  document.querySelectorAll('#colorPickerRow .colorBtn').forEach(b=>{
+    b.classList.toggle('selected', parseInt(b.dataset.idx)===col);
+  });
+  const info = C64_PALETTE[col];
+  document.getElementById('currentColorSwatch').style.background = info.hex;
+  document.getElementById('currentColorLabel').textContent = col+' - '+info.name;
+}
+
+// --- GLOBALNA ZMIANA KOLORU (WSZYSTKIE ZNAKI) ---
+function buildGlobalColorPicker(){
+  const row = document.getElementById('globalColorPickerRow');
+  row.innerHTML='';
+  C64_PALETTE.forEach(col=>{
+    const b = document.createElement('div');
+    b.className='colorBtn';
+    b.style.background = col.hex;
+    b.title = col.i+' - '+col.name;
+    b.dataset.idx = col.i;
+    if(col.i===globalColorChoice) b.classList.add('selected');
+    b.onclick = ()=>{
+      globalColorChoice = col.i;
+      row.querySelectorAll('.colorBtn').forEach(x=>x.classList.remove('selected'));
+      b.classList.add('selected');
+    };
+    row.appendChild(b);
+  });
+}
+document.getElementById('btnApplyGlobalColor').onclick = ()=>{
+  const name = C64_PALETTE[globalColorChoice].name;
+  if(!confirm('Na pewno zmienić kolor WSZYSTKICH 256 znaków na "'+globalColorChoice+' - '+name+'"? Tej operacji nie da się cofnąć (poza ręcznym przywróceniem).')) return;
+  for(let i=0;i<charColors.length;i++) charColors[i] = globalColorChoice;
+  updateColorPickerUI();
+  renderSingleCharList();
+  drawMap();
+};
+
+// --- MULTI-SELECT ZNAKÓW I ZBIOROWA ZMIANA KOLORU ---
+function buildMultiColorPicker(){
+  const row = document.getElementById('multiColorPickerRow');
+  row.innerHTML='';
+  C64_PALETTE.forEach(col=>{
+    const b = document.createElement('div');
+    b.className='colorBtn';
+    b.style.background = col.hex;
+    b.title = col.i+' - '+col.name;
+    b.dataset.idx = col.i;
+    if(col.i===multiColorChoice) b.classList.add('selected');
+    b.onclick = ()=>{
+      multiColorChoice = col.i;
+      row.querySelectorAll('.colorBtn').forEach(x=>x.classList.remove('selected'));
+      b.classList.add('selected');
+    };
+    row.appendChild(b);
+  });
+}
+function updateMultiSelectStatus(){
+  document.getElementById('multiSelectStatus').textContent = 'Zaznaczono: ' + multiSelected.size + ' znaków' + (multiSelected.size ? ' (' + Array.from(multiSelected).sort((a,b)=>a-b).join(', ') + ')' : '');
+  document.getElementById('btnApplyMultiColor').disabled = multiSelected.size === 0;
+}
+document.getElementById('btnApplyMultiColor').onclick = ()=>{
+  multiSelected.forEach(idx=>{ charColors[idx] = multiColorChoice; });
+  renderSingleCharList();
+  drawCharCanvas();
+  drawMap();
+};
+document.getElementById('btnClearMultiSelect').onclick = ()=>{
+  multiSelected.clear();
+  renderSingleCharList();
+  updateMultiSelectStatus();
+};
+
+document.getElementById('btnAddChar').onclick = ()=>{
+  const n = parseInt(document.getElementById('numChars').value)||16;
+  while(charset.length < n && charset.length < 256){ charset.push(makeEmptyChar()); charColors.push(0); }
+  renderCharsetGrid(); renderSingleCharList();
+};
+
+function selectCurrentChar(idx){
+  currentChar = idx;
+  document.getElementById('currentCharLabel').textContent = idx;
+  drawCharCanvas(); renderCharsetGrid(); renderSingleCharList();
+  if(placementTool !== 'single') setPlacementTool('single');
+}
+
+function renderCharsetGrid(){
+  const grid = document.getElementById('charsetGrid');
+  grid.innerHTML='';
+  charset.forEach((c, idx)=>{
+    const div = document.createElement('div');
+    div.textContent = idx;
+    if(idx===currentChar) div.classList.add('active');
+    if(!isCharEmpty(c)) div.classList.add('filled');
+    div.onclick = ()=>selectCurrentChar(idx);
+    grid.appendChild(div);
+  });
+}
+
+function renderSingleCharList(){
+  const list = document.getElementById('singleCharList');
+  list.innerHTML='';
+  charset.forEach((c, idx)=>{
+    const item = document.createElement('div');
+    let cls = 'singlechar-item';
+    if(idx===currentChar) cls += ' selected';
+    if(multiSelected.has(idx)) cls += ' multiselected';
+    item.className = cls;
+
+    const cv = document.createElement('canvas');
+    cv.width=8; cv.height=8;
+    const cctx = cv.getContext('2d');
+    const imgd = cctx.createImageData(8,8);
+    for(let y=0;y<8;y++) for(let x=0;x<8;x++){
+      const i=(y*8+x)*4; const on=c[y][x];
+      imgd.data[i]=on?0:0; imgd.data[i+1]=on?255:0; imgd.data[i+2]=on?0:0; imgd.data[i+3]=255;
+    }
+    cctx.putImageData(imgd,0,0);
+    item.appendChild(cv);
+
+    const dot = document.createElement('div');
+    dot.className='colorDot';
+    dot.title = 'Kolor: ' + (charColors[idx]||0) + ' - ' + C64_PALETTE[charColors[idx]||0].name + ' (klik = zaznacz/odznacz do zbiorowej zmiany)';
+    dot.style.background = C64_PALETTE[charColors[idx]||0].hex;
+    dot.onclick = (ev)=>{ ev.stopPropagation(); toggleMultiSelect(idx); };
+    item.appendChild(dot);
+
+    const label = document.createElement('span');
+    label.textContent = idx;
+    item.appendChild(label);
+
+    item.onclick = (ev)=>{
+      if(ev.ctrlKey || ev.metaKey){ toggleMultiSelect(idx); }
+      else { selectCurrentChar(idx); }
+    };
+    list.appendChild(item);
+  });
+  updateMultiSelectStatus();
+}
+
+function toggleMultiSelect(idx){
+  if(multiSelected.has(idx)) multiSelected.delete(idx);
+  else multiSelected.add(idx);
+  renderSingleCharList();
+}
+
+document.getElementById('numChars').addEventListener('change', e=>{
+  const n = Math.max(1, Math.min(256, parseInt(e.target.value)||16));
+  if(n > charset.length){ while(charset.length<n){ charset.push(makeEmptyChar()); charColors.push(0); } }
+  else if(n < charset.length){ charset = charset.slice(0,n); charColors = charColors.slice(0,n); if(currentChar>=n) currentChar=n-1; multiSelected.forEach(i=>{ if(i>=n) multiSelected.delete(i); }); }
+  renderCharsetGrid(); renderSingleCharList(); drawCharCanvas(); drawMap();
+});
+
+const mapCanvas = document.getElementById('mapCanvas');
+const mctx = mapCanvas.getContext('2d');
+
+function resizeMapCanvas(){
+  const cs = parseInt(document.getElementById('cellSize').value)||16;
+  mapCanvas.width = mapW*cs; mapCanvas.height = mapH*cs;
+}
+
+function drawTileGraphic(px, py, cs, charIdx){
+  const c = (charIdx>=0 && charIdx<charset.length) ? charset[charIdx] : null;
+  const color = (charIdx>=0 && charIdx<charColors.length) ? C64_PALETTE[charColors[charIdx]||0].hex : '#000';
+  const scale = cs/8;
+  if(!c){ mctx.fillStyle='#000'; mctx.fillRect(px,py,cs,cs); return; }
+  mctx.fillStyle = '#000';
+  mctx.fillRect(px,py,cs,cs);
+  for(let y=0;y<8;y++) for(let x=0;x<8;x++){
+    mctx.fillStyle = c[y][x] ? color : '#000';
+    mctx.fillRect(px+x*scale, py+y*scale, Math.ceil(scale), Math.ceil(scale));
+  }
+}
+
+function drawMap(){
+  const cs = parseInt(document.getElementById('cellSize').value)||16;
+  const showNumbers = document.getElementById('showTileNumbers').checked;
+  mctx.fillStyle = '#000';
+  mctx.fillRect(0,0,mapCanvas.width, mapCanvas.height);
+  for(let y=0;y<mapH;y++) for(let x=0;x<mapW;x++){
+    const idx = map[y*mapW+x];
+    const px=x*cs, py=y*cs;
+    drawTileGraphic(px, py, cs, idx);
+    mctx.strokeStyle='#333';
+    mctx.strokeRect(px, py, cs, cs);
+    if(showNumbers){
+      mctx.fillStyle='rgba(0,0,0,0.55)';
+      const labelW = Math.min(cs, 8+String(idx).length*5);
+      mctx.fillRect(px, py, labelW, Math.min(cs,10));
+      mctx.fillStyle='#8fd';
+      mctx.font = Math.max(7, cs*0.28)+'px monospace';
+      mctx.fillText(idx, px+1, py+Math.max(8, cs*0.28));
+    }
+  }
+  if(placementTool==='object' && hoverCell && selectedObjectIdx>=0){
+    const obj = objects[selectedObjectIdx];
+    if(obj){
+      mctx.strokeStyle='#8fd'; mctx.lineWidth=2;
+      mctx.strokeRect(hoverCell.x*cs, hoverCell.y*cs, obj.tilesW*cs, obj.tilesH*cs);
+      mctx.lineWidth=1;
+    }
+  }
+}
+
+let hoverCell = null;
+
+function stampObjectAt(startCol, startRow, obj){
+  for(let ty=0; ty<obj.tilesH; ty++) for(let tx=0; tx<obj.tilesW; tx++){
+    const col=startCol+tx, row=startRow+ty;
+    if(col>=0 && col<mapW && row>=0 && row<mapH) map[row*mapW+col] = obj.chars[ty][tx];
+  }
+}
+
+mapCanvas.addEventListener('mousemove', e=>{
+  const cs = parseInt(document.getElementById('cellSize').value)||16;
+  const rect = mapCanvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX-rect.left)/cs);
+  const y = Math.floor((e.clientY-rect.top)/cs);
+  if(placementTool==='object'){ hoverCell={x,y}; drawMap(); }
+});
+mapCanvas.addEventListener('mouseleave', ()=>{ hoverCell=null; if(placementTool==='object') drawMap(); });
+
+mapCanvas.addEventListener('click', e=>{
+  const cs = parseInt(document.getElementById('cellSize').value)||16;
+  const rect = mapCanvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX-rect.left)/cs);
+  const y = Math.floor((e.clientY-rect.top)/cs);
+  if(x<0||x>=mapW||y<0||y>=mapH) return;
+  if(placementTool==='object'){
+    if(selectedObjectIdx<0 || !objects[selectedObjectIdx]){ document.getElementById('toolStatus').textContent='Najpierw wybierz obiekt z panelu po prawej.'; return; }
+    stampObjectAt(x,y,objects[selectedObjectIdx]); drawMap();
+  } else {
+    map[y*mapW+x] = currentChar; drawMap();
+  }
+});
+
+function setPlacementTool(tool){
+  placementTool = tool;
+  if(tool==='single'){
+    document.getElementById('btnToolSingle').classList.add('active-tool');
+    document.getElementById('btnToolObject').classList.remove('active-tool');
+    document.getElementById('toolStatus').textContent='Kliknij na mapie, aby wpisać aktualny znak.';
+  } else {
+    document.getElementById('btnToolObject').classList.add('active-tool');
+    document.getElementById('btnToolSingle').classList.remove('active-tool');
+    document.getElementById('toolStatus').textContent = selectedObjectIdx>=0 ? 'Kliknij na mapie (lewy-górny róg), gdzie ma się zacząć obiekt.' : 'Wybierz obiekt z panelu po prawej, potem kliknij na mapie.';
+  }
+  drawMap();
+}
+document.getElementById('btnToolSingle').onclick = ()=>setPlacementTool('single');
+document.getElementById('btnToolObject').onclick = ()=>setPlacementTool('object');
+
+document.getElementById('mapWidth').addEventListener('change', resizeMapFromInputs);
+document.getElementById('mapHeight').addEventListener('change', resizeMapFromInputs);
+document.getElementById('cellSize').addEventListener('change', ()=>{resizeMapCanvas(); drawMap();});
+document.getElementById('showTileNumbers').addEventListener('change', drawMap);
+
+function resizeMapFromInputs(){
+  const newW = parseInt(document.getElementById('mapWidth').value)||mapW;
+  const newH = parseInt(document.getElementById('mapHeight').value)||mapH;
+  const newMap = new Array(newW*newH).fill(0);
+  for(let y=0;y<Math.min(mapH,newH);y++) for(let x=0;x<Math.min(mapW,newW);x++) newMap[y*newW+x] = map[y*mapW+x];
+  mapW=newW; mapH=newH; map=newMap;
+  resizeMapCanvas(); drawMap();
+}
+
+document.getElementById('btnFillMap').onclick = ()=>{ map = map.map(()=>currentChar); drawMap(); };
+document.getElementById('btnClearMap').onclick = ()=>{ map = map.map(()=>0); drawMap(); };
+
+function charToByteArray(c){
+  const bytes=[];
+  for(let y=0;y<8;y++){ let b=0; for(let x=0;x<8;x++){ b=(b<<1)|(c[y][x]?1:0); } bytes.push(b); }
+  return bytes;
+}
+
+document.getElementById('btnGenCharCode').onclick = ()=>{
+  let out = 'char charset[] = {\n';
+  charset.forEach((c, idx)=>{
+    const bytes = charToByteArray(c);
+    out += '  ' + bytes.map(b=>'0x'+b.toString(16).padStart(2,'0')).join(', ') + ', // char ' + idx + '\n';
+  });
+  out += '};\n';
+  document.getElementById('charCodeOutput').value = out;
+};
+
+document.getElementById('btnGenColorCode').onclick = ()=>{
+  let out = '// Tablica kolorow per typ kafelka - indeks = numer znaku (jak w charset[] i map[])\n';
+  out += 'byte tileColor[256] = {\n';
+  for(let i=0;i<256;i++){
+    const col = i<charColors.length ? (charColors[i]||0) : 0;
+    const name = C64_PALETTE[col].name;
+    out += '  ' + col + ', // char ' + i + ' - ' + name + '\n';
+  }
+  out += '};\n';
+  document.getElementById('colorCodeOutput').value = out;
+};
+
+function downloadBinary(bytes, filename){
+  const blob = new Blob([bytes], {type:'application/octet-stream'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('btnDownloadCharBin').onclick = ()=>{
+  const bytes=[];
+  charset.forEach(c=>bytes.push(...charToByteArray(c)));
+  downloadBinary(new Uint8Array(bytes), 'charset.bin');
+};
+
+document.getElementById('btnGenMapCode').onclick = ()=>{
+  let out = '#define MAP_WIDTH ' + mapW + '\n';
+  out += '#define MAP_HEIGHT ' + mapH + '\n\n';
+  out += 'const unsigned char map[MAP_WIDTH * MAP_HEIGHT] = {\n';
+  for(let y=0;y<mapH;y++){
+    out += '  ' + map.slice(y*mapW,(y+1)*mapW).join(', ') + ',\n';
+  }
+  out += '};\n\n';
+  out += '// Odczyt kafelka: map[(word)row * MAP_WIDTH + col]\n';
+  document.getElementById('mapCodeOutput').value = out;
+};
+
+document.getElementById('btnDownloadMapBin').onclick = ()=>{
+  downloadBinary(new Uint8Array(map), 'map.bin');
+};
+
+function saveProject(){
+  const project = {
+    version: 3, savedAt: new Date().toISOString(),
+    currentChar, charset, charColors, mapW, mapH, map,
+    cellSize: parseInt(document.getElementById('cellSize').value)||16,
+    objects
+  };
+  const blob = new Blob([JSON.stringify(project)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
+  a.href=url; a.download='c64_charset_project_'+stamp+'.json'; a.click();
+  URL.revokeObjectURL(url);
+  document.getElementById('projectStatus').textContent = 'Zapisano: '+a.download;
+}
+
+function loadProjectFromFile(file){
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const data = JSON.parse(e.target.result);
+      if(!data.charset || !Array.isArray(data.charset)) throw new Error('Nieprawidłowy plik projektu');
+      charset = data.charset;
+      charColors = Array.isArray(data.charColors) ? data.charColors : charset.map(()=>0);
+      while(charColors.length < charset.length) charColors.push(0);
+      currentChar = data.currentChar || 0;
+      if(currentChar>=charset.length) currentChar=0;
+      mapW = data.mapW||mapW; mapH = data.mapH||mapH;
+      map = data.map || new Array(mapW*mapH).fill(0);
+      objects = Array.isArray(data.objects) ? data.objects : [];
+      selectedObjectIdx = objects.length ? 0 : -1;
+      multiSelected.clear();
+      document.getElementById('numChars').value = charset.length;
+      document.getElementById('mapWidth').value = mapW;
+      document.getElementById('mapHeight').value = mapH;
+      if(data.cellSize) document.getElementById('cellSize').value = data.cellSize;
+      document.getElementById('currentCharLabel').textContent = currentChar;
+      resizeMapCanvas();
+      renderCharsetGrid(); renderSingleCharList(); drawCharCanvas(); drawMap(); renderObjectsList();
+      document.getElementById('projectStatus').textContent = 'Wczytano projekt z pliku ' + file.name + ' (charset: ' + charset.length + ' znaków, mapa: ' + mapW + 'x' + mapH + ', obiekty: ' + objects.length + ')';
+    } catch(err){
+      document.getElementById('projectStatus').textContent = 'Błąd wczytywania: ' + err.message;
+    }
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById('btnSaveProject').onclick = saveProject;
+document.getElementById('btnLoadProject').onclick = ()=>document.getElementById('fileInput').click();
+document.getElementById('fileInput').addEventListener('change', e=>{ if(e.target.files.length) loadProjectFromFile(e.target.files[0]); });
+
+document.getElementById('threshold').addEventListener('input', e=>{ document.getElementById('thresholdVal').textContent = e.target.value; });
+
+function findFreeSlotsStartingAt(startIdx, count){
+  const slots=[]; let i=startIdx;
+  while(slots.length<count){
+    if(i>=charset.length){ if(charset.length>=256) break; charset.push(makeEmptyChar()); charColors.push(0); }
+    if(isCharEmpty(charset[i])) slots.push(i);
+    i++;
+  }
+  return slots;
+}
+function nextSequentialSlots(startIdx, count){
+  const slots=[];
+  for(let i=0;i<count;i++){
+    const idx=startIdx+i;
+    while(idx>=charset.length && charset.length<256){ charset.push(makeEmptyChar()); charColors.push(0); }
+    if(idx<256) slots.push(idx);
+  }
+  return slots;
+}
+
+function imageToBits(imgData, w, h, threshold, invert){
+  const bits=[];
+  for(let y=0;y<h;y++){
+    const row=[];
+    for(let x=0;x<w;x++){
+      const i=(y*w+x)*4;
+      const r=imgData.data[i], g=imgData.data[i+1], b=imgData.data[i+2];
+      const lum = 0.299*r+0.587*g+0.114*b;
+      let on = lum<threshold ? 1:0;
+      if(invert) on = on?0:1;
+      row.push(on);
+    }
+    bits.push(row);
+  }
+  return bits;
+}
+
+function sliceIntoChars(bits, size){
+  const tilesPerRow = size/8;
+  const chars=[];
+  for(let ty=0; ty<tilesPerRow; ty++) for(let tx=0; tx<tilesPerRow; tx++){
+    const c = makeEmptyChar();
+    for(let y=0;y<8;y++) for(let x=0;x<8;x++) c[y][x] = bits[ty*8+y][tx*8+x];
+    chars.push(c);
+  }
+  return chars;
+}
+
+function renderImportPreview(newChars, slots){
+  const container = document.getElementById('importPreview');
+  container.innerHTML='';
+  newChars.forEach((c,i)=>{
+    const box = document.createElement('div'); box.className='thumbBox';
+    const cv = document.createElement('canvas'); cv.width=8; cv.height=8;
+    const cctx = cv.getContext('2d');
+    const imgd = cctx.createImageData(8,8);
+    for(let y=0;y<8;y++) for(let x=0;x<8;x++){
+      const idx=(y*8+x)*4; const on=c[y][x];
+      imgd.data[idx]=on?0:0; imgd.data[idx+1]=on?255:0; imgd.data[idx+2]=on?0:0; imgd.data[idx+3]=255;
+    }
+    cctx.putImageData(imgd,0,0);
+    box.appendChild(cv);
+    const label = document.createElement('span'); label.textContent = slots[i];
+    box.appendChild(label);
+    container.appendChild(box);
+  });
+}
+
+function renderObjectsList(){
+  const list = document.getElementById('objectsList');
+  if(objects.length===0){ list.innerHTML='Brak obiektów - zaimportuj obrazek 16x16, 32x32 lub 64x64 w sekcji 0b.'; return; }
+  list.innerHTML='';
+  objects.forEach((obj, idx)=>{
+    const item = document.createElement('div');
+    item.className = 'object-item'+(idx===selectedObjectIdx?' selected':'');
+    const cv = document.createElement('canvas');
+    const totalPx = obj.tilesW*8;
+    cv.width = totalPx; cv.height = obj.tilesH*8;
+    cv.style.width = Math.min(160, totalPx*3)+'px';
+    cv.style.height = Math.min(160, obj.tilesH*8*3)+'px';
+    const octx = cv.getContext('2d');
+    const imgd = octx.createImageData(cv.width, cv.height);
+    for(let ty=0; ty<obj.tilesH; ty++) for(let tx=0; tx<obj.tilesW; tx++){
+      const charIdx = obj.chars[ty][tx];
+      const c = charset[charIdx];
+      if(!c) continue;
+      for(let y=0;y<8;y++) for(let x=0;x<8;x++){
+        const px=tx*8+x, py=ty*8+y;
+        const i=(py*cv.width+px)*4; const on=c[y][x];
+        imgd.data[i]=on?0:0; imgd.data[i+1]=on?255:0; imgd.data[i+2]=on?0:0; imgd.data[i+3]=255;
+      }
+    }
+    octx.putImageData(imgd,0,0);
+    item.appendChild(cv);
+    const label = document.createElement('div'); label.className='objLabel';
+    label.textContent = obj.name + ' (' + obj.tilesW*8 + 'x' + obj.tilesH*8 + 'px, ' + (obj.tilesW*obj.tilesH) + ' znaków)';
+    item.appendChild(label);
+    const del = document.createElement('div'); del.className='objDel'; del.textContent='usuń obiekt';
+    del.onclick = (ev)=>{ ev.stopPropagation(); objects.splice(idx,1); if(selectedObjectIdx===idx) selectedObjectIdx=-1; else if(selectedObjectIdx>idx) selectedObjectIdx--; renderObjectsList(); };
+    item.appendChild(del);
+    item.onclick = ()=>{ selectedObjectIdx=idx; renderObjectsList(); setPlacementTool('object'); document.getElementById('toolStatus').textContent='Kliknij na mapie (lewy-górny róg), gdzie ma się zacząć obiekt "'+obj.name+'".'; };
+    list.appendChild(item);
+  });
+}
+
+document.getElementById('btnImportImage').onclick = ()=>document.getElementById('imgFileInput').click();
+document.getElementById('imgFileInput').addEventListener('change', e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const img = new Image();
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    img.onload = ()=>{
+      const w = img.naturalWidth, h = img.naturalHeight;
+      const validSizes = [8,16,32,64];
+      if(w!==h || !validSizes.includes(w)){
+        document.getElementById('importStatus').textContent = 'Błąd: obrazek musi mieć rozmiar 8x8, 16x16, 32x32 lub 64x64 px (wczytano '+w+'x'+h+'px).';
+        return;
+      }
+      const tmpCanvas = document.createElement('canvas');
+      tmpCanvas.width=w; tmpCanvas.height=h;
+      const tctx = tmpCanvas.getContext('2d');
+      tctx.drawImage(img, 0, 0, w, h);
+      const imgData = tctx.getImageData(0,0,w,h);
+      const threshold = parseInt(document.getElementById('threshold').value);
+      const invert = document.getElementById('invertImport').checked;
+      const bits = imageToBits(imgData, w, h, threshold, invert);
+      const newChars = sliceIntoChars(bits, w);
+      const startIdx = parseInt(document.getElementById('importStartIndex').value)||0;
+      const autoFree = document.getElementById('autoFindFree').checked;
+      let slots = autoFree ? findFreeSlotsStartingAt(startIdx, newChars.length) : nextSequentialSlots(startIdx, newChars.length);
+      if(slots.length < newChars.length){
+        document.getElementById('importStatus').textContent = 'Uwaga: brak wolnych miejsc w charsecie (limit 256 znaków). Wpisano tylko '+slots.length+' z '+newChars.length+'.';
+      } else {
+        slots.forEach((slotIdx,i)=>{ charset[slotIdx]=newChars[i]; });
+        const tilesPerRow = w/8;
+        if(tilesPerRow>1 && slots.length===newChars.length){
+          const charsGrid=[];
+          for(let ty=0; ty<tilesPerRow; ty++){ const rowArr=[]; for(let tx=0; tx<tilesPerRow; tx++) rowArr.push(slots[ty*tilesPerRow+tx]); charsGrid.push(rowArr); }
+          let name = document.getElementById('objectName').value.trim();
+          if(!name) name = 'obiekt_'+(w)+'x'+(h)+'_'+(objects.length+1);
+          objects.push({name, tilesW:tilesPerRow, tilesH:tilesPerRow, chars:charsGrid});
+          selectedObjectIdx = objects.length-1;
+          renderObjectsList();
+        }
+        document.getElementById('objectName').value='';
+        document.getElementById('numChars').value = charset.length;
+        currentChar = slots[0];
+        document.getElementById('currentCharLabel').textContent = currentChar;
+        renderCharsetGrid(); renderSingleCharList(); drawCharCanvas();
+        renderImportPreview(newChars, slots);
+        drawMap();
+        const tilesCount = (w/8)*(h/8);
+        let statusMsg = 'Zaimportowano obrazek '+w+'x'+h+'px ('+tilesCount+' znaków 8x8), wpisano do slotów: '+slots.join(', ')+'.';
+        if(tilesPerRow>1) statusMsg += ' Dodano jako obiekt w panelu po prawej (sekcja 3) - wybierz tryb "stempel obiektu" i kliknij na mapie.';
+        document.getElementById('importStatus').textContent = statusMsg;
+      }
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+resizeMapCanvas();
+buildColorPicker();
+buildGlobalColorPicker();
+buildMultiColorPicker();
+renderCharsetGrid();
+renderSingleCharList();
+drawCharCanvas();
+drawMap();
+renderObjectsList();
+</script>
+</body>
+</html>
